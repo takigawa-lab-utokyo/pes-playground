@@ -1,18 +1,626 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Mountain, RotateCcw, Sparkles, Waves } from 'lucide-react';
-type Feature = { x:number;y:number;amp:number;sigma:number }; type Point={x:number;y:number;e:number}; type Paths={lup:Point[];afir:Point[];irc:Point[];pt:Point}|null;
-const N=80, palette=['#081d37','#0b3d5c','#096b76','#13a487','#8bd36f','#f4df68','#f59a52','#db4c55'];
-const preset:Feature[]=[{x:.24,y:.28,amp:-2.7,sigma:.11},{x:.72,y:.67,amp:-2.35,sigma:.13},{x:.25,y:.76,amp:-1.5,sigma:.10},{x:.49,y:.47,amp:2.15,sigma:.12},{x:.82,y:.24,amp:1.4,sigma:.10}];
-function energy(x:number,y:number,fs:Feature[]){let e=.24*(x-.5)**2+.18*(y-.5)**2;for(const f of fs)e+=f.amp*Math.exp(-((x-f.x)**2+(y-f.y)**2)/(2*f.sigma**2));return e}
-function color(t:number){const z=Math.max(0,Math.min(.999,t))*(palette.length-1),i=Math.floor(z),q=z-i,a=palette[i].match(/\w\w/g)!.map(v=>parseInt(v,16)),b=palette[i+1].match(/\w\w/g)!.map(v=>parseInt(v,16));return `rgb(${a.map((v,k)=>Math.round(v+(b[k]-v)*q)).join(',')})`}
-function detectMinima(fs:Feature[]){const vals=Array.from({length:N},(_,j)=>Array.from({length:N},(_,i)=>energy((i+.5)/N,(j+.5)/N,fs))),raw:Point[]=[];for(let j=2;j<N-2;j++)for(let i=2;i<N-2;i++){const v=vals[j][i];let ok=true;for(let y=-1;y<=1;y++)for(let x=-1;x<=1;x++)if((x||y)&&vals[j+y][i+x]<=v)ok=false;if(ok)raw.push({x:(i+.5)/N,y:(j+.5)/N,e:v})}return raw.sort((a,b)=>a.e-b.e).filter((p,i,a)=>a.slice(0,i).every(q=>Math.hypot(p.x-q.x,p.y-q.y)>.08)).slice(0,9)}
-function pathBetween(a:Point,b:Point,fs:Feature[]):Paths{const steps=90,lup:Point[]=[],afir:Point[]=[];for(let i=0;i<=steps;i++){const t=i/steps,x=a.x+(b.x-a.x)*t,y=a.y+(b.y-a.y)*t;lup.push({x,y,e:energy(x,y,fs)})}let cur={x:a.x,y:a.y};for(let i=0;i<=steps;i++){const t=i/steps,target={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};if(i){const h=.003,gx=(energy(cur.x+h,cur.y,fs)-energy(cur.x-h,cur.y,fs))/(2*h),gy=(energy(cur.x,cur.y+h,fs)-energy(cur.x,cur.y-h,fs))/(2*h);cur.x+=(target.x-cur.x)*.19-gx*.018;cur.y+=(target.y-cur.y)*.19-gy*.018;cur.x=Math.max(.01,Math.min(.99,cur.x));cur.y=Math.max(.01,Math.min(.99,cur.y))}afir.push({x:cur.x,y:cur.y,e:energy(cur.x,cur.y,fs)})}afir[afir.length-1]=b;const seed=afir.reduce((m,p)=>p.e>m.e?p:m,afir[0]);const flow=(start:Point,target:Point)=>{const out:Point[]=[];let p={x:start.x,y:start.y};for(let k=0;k<180;k++){out.push({...p,e:energy(p.x,p.y,fs)});if(Math.hypot(p.x-target.x,p.y-target.y)<.015)break;const h=.0025,gx=(energy(p.x+h,p.y,fs)-energy(p.x-h,p.y,fs))/(2*h),gy=(energy(p.x,p.y+h,fs)-energy(p.x,p.y-h,fs))/(2*h),gn=Math.hypot(gx,gy)||1;p.x=Math.max(0,Math.min(1,p.x-gx/gn*.007+(target.x-p.x)*.004));p.y=Math.max(0,Math.min(1,p.y-gy/gn*.007+(target.y-p.y)*.004))}out.push(target);return out};const left=flow(seed,a).reverse(),right=flow(seed,b),irc=[...left,...right.slice(1)],pt=irc.reduce((m,p)=>p.e>m.e?p:m,irc[0]);return{lup,afir,irc,pt}}
+import {
+  GitMerge,
+  Mountain,
+  Pencil,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  Waves,
+} from 'lucide-react';
+type Feature = { x: number; y: number; amp: number; sigma: number };
+type Point = { x: number; y: number; e: number };
+type Stroke = { x: number; y: number }[];
+type Paths = { afir: Point[]; irc: Point[]; pt: Point } | null;
+const N = 80,
+  palette = [
+    '#081d37',
+    '#0b3d5c',
+    '#096b76',
+    '#13a487',
+    '#8bd36f',
+    '#f4df68',
+    '#f59a52',
+    '#db4c55',
+  ];
+const preset: Feature[] = [
+  { x: 0.24, y: 0.28, amp: -2.7, sigma: 0.11 },
+  { x: 0.72, y: 0.67, amp: -2.35, sigma: 0.13 },
+  { x: 0.25, y: 0.76, amp: -1.5, sigma: 0.1 },
+  { x: 0.49, y: 0.47, amp: 2.15, sigma: 0.12 },
+  { x: 0.82, y: 0.24, amp: 1.4, sigma: 0.1 },
+];
+function energy(x: number, y: number, fs: Feature[]) {
+  let e = 0.24 * (x - 0.5) ** 2 + 0.18 * (y - 0.5) ** 2;
+  for (const f of fs)
+    e +=
+      f.amp * Math.exp(-((x - f.x) ** 2 + (y - f.y) ** 2) / (2 * f.sigma ** 2));
+  return e;
+}
+function color(t: number) {
+  const z = Math.max(0, Math.min(0.999, t)) * (palette.length - 1),
+    i = Math.floor(z),
+    q = z - i,
+    a = palette[i].match(/\w\w/g)!.map((v) => parseInt(v, 16)),
+    b = palette[i + 1].match(/\w\w/g)!.map((v) => parseInt(v, 16));
+  return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * q)).join(',')})`;
+}
+function detectMinima(fs: Feature[]) {
+  const vals = Array.from({ length: N }, (_, j) =>
+      Array.from({ length: N }, (_, i) =>
+        energy((i + 0.5) / N, (j + 0.5) / N, fs),
+      ),
+    ),
+    raw: Point[] = [];
+  for (let j = 2; j < N - 2; j++)
+    for (let i = 2; i < N - 2; i++) {
+      const v = vals[j][i];
+      let ok = true;
+      for (let y = -1; y <= 1; y++)
+        for (let x = -1; x <= 1; x++)
+          if ((x || y) && vals[j + y][i + x] <= v) ok = false;
+      if (ok) raw.push({ x: (i + 0.5) / N, y: (j + 0.5) / N, e: v });
+    }
+  return raw
+    .sort((a, b) => a.e - b.e)
+    .filter((p, i, a) =>
+      a.slice(0, i).every((q) => Math.hypot(p.x - q.x, p.y - q.y) > 0.08),
+    )
+    .slice(0, 9);
+}
+function pathBetween(a: Point, b: Point, fs: Feature[]): Paths {
+  const steps = 90,
+    afir: Point[] = [];
+  let cur = { x: a.x, y: a.y };
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps,
+      target = { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+    if (i) {
+      const h = 0.003,
+        gx =
+          (energy(cur.x + h, cur.y, fs) - energy(cur.x - h, cur.y, fs)) /
+          (2 * h),
+        gy =
+          (energy(cur.x, cur.y + h, fs) - energy(cur.x, cur.y - h, fs)) /
+          (2 * h);
+      cur.x += (target.x - cur.x) * 0.19 - gx * 0.018;
+      cur.y += (target.y - cur.y) * 0.19 - gy * 0.018;
+      cur.x = Math.max(0.01, Math.min(0.99, cur.x));
+      cur.y = Math.max(0.01, Math.min(0.99, cur.y));
+    }
+    afir.push({ x: cur.x, y: cur.y, e: energy(cur.x, cur.y, fs) });
+  }
+  afir[afir.length - 1] = b;
+  const seed = afir.reduce((m, p) => (p.e > m.e ? p : m), afir[0]);
+  const flow = (start: Point, target: Point) => {
+    const out: Point[] = [];
+    let p = { x: start.x, y: start.y };
+    for (let k = 0; k < 180; k++) {
+      out.push({ ...p, e: energy(p.x, p.y, fs) });
+      if (Math.hypot(p.x - target.x, p.y - target.y) < 0.015) break;
+      const h = 0.0025,
+        gx = (energy(p.x + h, p.y, fs) - energy(p.x - h, p.y, fs)) / (2 * h),
+        gy = (energy(p.x, p.y + h, fs) - energy(p.x, p.y - h, fs)) / (2 * h),
+        gn = Math.hypot(gx, gy) || 1;
+      p.x = Math.max(
+        0,
+        Math.min(1, p.x - (gx / gn) * 0.007 + (target.x - p.x) * 0.004),
+      );
+      p.y = Math.max(
+        0,
+        Math.min(1, p.y - (gy / gn) * 0.007 + (target.y - p.y) * 0.004),
+      );
+    }
+    out.push(target);
+    return out;
+  };
+  const left = flow(seed, a).reverse(),
+    right = flow(seed, b),
+    irc = [...left, ...right.slice(1)],
+    pt = irc.reduce((m, p) => (p.e > m.e ? p : m), irc[0]);
+  return { afir, irc, pt };
+}
 
-export default function Home(){const canvas=useRef<HTMLCanvasElement>(null),[features,setFeatures]=useState(preset),[kind,setKind]=useState<'valley'|'hill'>('valley'),[height,setHeight]=useState(2),[width,setWidth]=useState(.105),[contours,setContours]=useState(true),[showEQ,setShowEQ]=useState(true),minima=useMemo(()=>detectMinima(features),[features]),[selected,setSelected]=useState<number[]>([0,1]),paths=useMemo(()=>selected.length===2&&minima[selected[0]]&&minima[selected[1]]?pathBetween(minima[selected[0]],minima[selected[1]],features):null,[selected,minima,features]),[shown,setShown]=useState({lup:true,afir:true,irc:true});
-useEffect(()=>{const context=(document as unknown as {modelContext?:{registerTool:(tool:unknown,options?:unknown)=>void|Promise<void>}}).modelContext;if(!context?.registerTool)return;const lifecycle=new AbortController();const register=(tool:unknown)=>{try{void Promise.resolve(context.registerTool(tool,{signal:lifecycle.signal})).catch(()=>{})}catch{}};register({name:'add_pes_feature',title:'Add PES feature',description:'Add a Gaussian hill or valley to the visible potential energy surface.',inputSchema:{type:'object',properties:{kind:{type:'string',enum:['hill','valley']},x:{type:'number',minimum:0,maximum:1},y:{type:'number',minimum:0,maximum:1},height:{type:'number',minimum:.3,maximum:4},width:{type:'number',minimum:.04,maximum:.2}},required:['kind','x','y','height','width'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute:(raw:unknown)=>{const v=raw as {kind:string;x:number;y:number;height:number;width:number};if(!['hill','valley'].includes(v.kind)||![v.x,v.y,v.height,v.width].every(Number.isFinite)||v.x<0||v.x>1||v.y<0||v.y>1||v.height<.3||v.height>4||v.width<.04||v.width>.2)throw new Error('Invalid PES feature');setFeatures(f=>[...f,{x:v.x,y:v.y,amp:(v.kind==='valley'?-1:1)*v.height,sigma:v.width}]);return{added:v.kind,x:v.x,y:v.y}}});register({name:'reset_pes_surface',title:'Reset PES surface',description:'Reset the visible PES to its initial example landscape.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute:()=>{setFeatures(preset);setSelected([0,1]);return{reset:true}}});return()=>lifecycle.abort()},[]);
-const draw=useCallback(()=>{const c=canvas.current;if(!c)return;const dpr=devicePixelRatio||1,w=c.clientWidth,h=c.clientHeight;c.width=w*dpr;c.height=h*dpr;const ctx=c.getContext('2d')!;ctx.scale(dpr,dpr);const S=100,vals:number[][]=[];let lo=Infinity,hi=-Infinity;for(let j=0;j<S;j++){vals[j]=[];for(let i=0;i<S;i++){const v=energy(i/(S-1),j/(S-1),features);vals[j][i]=v;lo=Math.min(lo,v);hi=Math.max(hi,v)}}const cw=w/S,ch=h/S;for(let j=0;j<S;j++)for(let i=0;i<S;i++){ctx.fillStyle=color((vals[j][i]-lo)/(hi-lo));ctx.fillRect(i*cw,j*ch,cw+1,ch+1)}if(contours){ctx.lineWidth=.75;ctx.strokeStyle='rgba(255,255,255,.46)';for(let l=1;l<13;l++){const level=lo+(hi-lo)*l/13;ctx.beginPath();for(let j=0;j<S-1;j++)for(let i=0;i<S-1;i++){const v=vals[j][i];if((v-level)*(vals[j][i+1]-level)<0){const x=(i+(level-v)/(vals[j][i+1]-v))*cw;ctx.moveTo(x,j*ch);ctx.lineTo(x,(j+1)*ch)}if((v-level)*(vals[j+1][i]-level)<0){const y=(j+(level-v)/(vals[j+1][i]-v))*ch;ctx.moveTo(i*cw,y);ctx.lineTo((i+1)*cw,y)}}ctx.stroke()}}const line=(pts:Point[],stroke:string,dash:number[]=[])=>{ctx.beginPath();pts.forEach((p,i)=>i?ctx.lineTo(p.x*w,p.y*h):ctx.moveTo(p.x*w,p.y*h));ctx.strokeStyle=stroke;ctx.lineWidth=3;ctx.setLineDash(dash);ctx.stroke();ctx.setLineDash([])};if(paths){if(shown.lup)line(paths.lup,'#f6c85f',[7,6]);if(shown.afir)line(paths.afir,'#ff6b8a',[2,5]);if(shown.irc)line(paths.irc,'#d9f6ff');const p=paths.pt;ctx.fillStyle='#fff';ctx.strokeStyle='#17202a';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x*w,p.y*h,7,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#17202a';ctx.font='700 11px sans-serif';ctx.fillText('PT',p.x*w+11,p.y*h-10)}if(showEQ)minima.forEach((p,i)=>{const active=selected.includes(i);ctx.fillStyle=active?'#fff':'#0a2535';ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(p.x*w,p.y*h,active?7:5,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.fillStyle='#fff';ctx.font='700 10px sans-serif';ctx.fillText(`EQ${i+1}`,p.x*w+9,p.y*h+4)})},[features,contours,minima,paths,showEQ,shown,selected]);
-useEffect(()=>{draw();const ro=new ResizeObserver(draw);if(canvas.current)ro.observe(canvas.current);return()=>ro.disconnect()},[draw]);const click=(e:React.MouseEvent<HTMLCanvasElement>)=>{const r=e.currentTarget.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height,near=minima.findIndex(p=>Math.hypot(p.x-x,p.y-y)<.035);if(near>=0){setSelected(s=>s.includes(near)?s.filter(v=>v!==near):[...s.slice(-1),near]);return}setFeatures(f=>[...f,{x,y,amp:(kind==='valley'?-1:1)*height,sigma:width}])};
-return <main className="app-shell"><header className="topbar"><div className="brand"><span className="brand-mark"><Waves size={20}/></span><div><h1>PES Playground</h1><p>Potential energy surface explorer</p></div></div><div className="status"><span/>LIVE SURFACE</div></header><section className="workspace"><aside className="panel controls"><div className="section-head"><span>01</span><div><h2>地形をつくる</h2><p>キャンバスをクリック</p></div></div><label className="label">配置するポテンシャル</label><div className="segment"><button className={kind==='valley'?'active':''} onClick={()=>setKind('valley')}>⌄ 谷</button><button className={kind==='hill'?'active':''} onClick={()=>setKind('hill')}><Mountain size={15}/> 山</button></div><label className="range-label"><span>高さ / 深さ</span><b>{height.toFixed(1)}</b></label><input type="range" min=".3" max="4" step=".1" value={height} onChange={e=>setHeight(+e.target.value)}/><label className="range-label"><span>広がり σ</span><b>{width.toFixed(2)}</b></label><input type="range" min=".04" max=".2" step=".005" value={width} onChange={e=>setWidth(+e.target.value)}/><div className="hint"><Sparkles size={16}/><p>空白部分をクリックすると、選んだ形状を重ね合わせます。EQをクリックすると経路の端点を選べます。</p></div><button className="reset" onClick={()=>{setFeatures(preset);setSelected([0,1])}}><RotateCcw size={15}/> 初期状態に戻す</button></aside><section className="surface-card"><div className="surface-head"><div><span className="eyebrow">ENERGY LANDSCAPE</span><h2>2D Potential Energy Surface</h2></div><div className="toggles"><label><input type="checkbox" checked={contours} onChange={e=>setContours(e.target.checked)}/> 等高線</label><label><input type="checkbox" checked={showEQ} onChange={e=>setShowEQ(e.target.checked)}/> EQ</label></div></div><div className="canvas-wrap"><canvas ref={canvas} onClick={click} aria-label="クリックで山や谷を配置するPESキャンバス"/><div className="axis y">Reaction coordinate 2</div><div className="axis x">Reaction coordinate 1</div><div className="legend"><span>LOW</span><i/><span>HIGH</span></div></div><div className="surface-foot"><span>{features.length} features</span><span>{minima.length} minima detected</span><span>{selected.length}/2 EQ selected</span></div></section><aside className="panel analysis"><div className="section-head"><span>02</span><div><h2>経路をくらべる</h2><p>検出した極小点を接続</p></div></div><div className="eq-list">{minima.map((p,i)=><button key={i} className={'eq '+(selected.includes(i)?'active':'')} onClick={()=>setSelected(s=>s.includes(i)?s.filter(v=>v!==i):[...s.slice(-1),i])}><i>EQ{i+1}</i><span>E = {p.e.toFixed(2)}</span></button>)}</div><div className="paths"><PathToggle color="#f6c85f" dash label="LUP" desc="直線補間" checked={shown.lup} onChange={()=>setShown(s=>({...s,lup:!s.lup}))}/><PathToggle color="#ff6b8a" label="AFIR" desc="人工力で誘導" checked={shown.afir} onChange={()=>setShown(s=>({...s,afir:!s.afir}))}/><PathToggle color="#d9f6ff" label="IRC" desc="勾配流" checked={shown.irc} onChange={()=>setShown(s=>({...s,irc:!s.irc}))}/></div><div className="pt-card"><span>PATH TOP</span><b>{paths?paths.pt.e.toFixed(2):'—'}</b><small>相対エネルギー</small></div><p className="note">※ 教育用の数値モデルです。IRC / AFIR / LUP は概念的な挙動を再現しています。</p></aside></section></main>}
-function PathToggle({color,label,desc,checked,onChange,dash=false}:{color:string,label:string,desc:string,checked:boolean,onChange:()=>void,dash?:boolean}){return <label className="path-row"><input type="checkbox" checked={checked} onChange={onChange}/><i style={{background:color,borderStyle:dash?'dashed':'solid'}}/><span><b>{label}</b><small>{desc}</small></span></label>}
+export default function Home() {
+  const canvas = useRef<HTMLCanvasElement>(null),
+    drawing = useRef(false),
+    [features, setFeatures] = useState(preset),
+    [kind, setKind] = useState<'valley' | 'hill'>('valley'),
+    [height, setHeight] = useState(2),
+    [width, setWidth] = useState(0.105),
+    [contours, setContours] = useState(true),
+    [showEQ, setShowEQ] = useState(true),
+    [penMode, setPenMode] = useState(false),
+    [strokes, setStrokes] = useState<Stroke[]>([]),
+    minima = useMemo(() => detectMinima(features), [features]),
+    [selected, setSelected] = useState<number[]>([0, 1]),
+    paths = useMemo(
+      () =>
+        selected.length === 2 && minima[selected[0]] && minima[selected[1]]
+          ? pathBetween(minima[selected[0]], minima[selected[1]], features)
+          : null,
+      [selected, minima, features],
+    ),
+    [shown, setShown] = useState({ afir: true, gradient: true });
+  useEffect(() => {
+    const context = (
+      document as unknown as {
+        modelContext?: {
+          registerTool: (
+            tool: unknown,
+            options?: unknown,
+          ) => void | Promise<void>;
+        };
+      }
+    ).modelContext;
+    if (!context?.registerTool) return;
+    const lifecycle = new AbortController();
+    const register = (tool: unknown) => {
+      try {
+        void Promise.resolve(
+          context.registerTool(tool, { signal: lifecycle.signal }),
+        ).catch(() => {});
+      } catch {}
+    };
+    register({
+      name: 'add_pes_feature',
+      title: 'Add PES feature',
+      description:
+        'Add a Gaussian hill or valley to the visible potential energy surface.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: ['hill', 'valley'] },
+          x: { type: 'number', minimum: 0, maximum: 1 },
+          y: { type: 'number', minimum: 0, maximum: 1 },
+          height: { type: 'number', minimum: 0.3, maximum: 4 },
+          width: { type: 'number', minimum: 0.04, maximum: 0.2 },
+        },
+        required: ['kind', 'x', 'y', 'height', 'width'],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+      execute: (raw: unknown) => {
+        const v = raw as {
+          kind: string;
+          x: number;
+          y: number;
+          height: number;
+          width: number;
+        };
+        if (
+          !['hill', 'valley'].includes(v.kind) ||
+          ![v.x, v.y, v.height, v.width].every(Number.isFinite) ||
+          v.x < 0 ||
+          v.x > 1 ||
+          v.y < 0 ||
+          v.y > 1 ||
+          v.height < 0.3 ||
+          v.height > 4 ||
+          v.width < 0.04 ||
+          v.width > 0.2
+        )
+          throw new Error('Invalid PES feature');
+        setFeatures((f) => [
+          ...f,
+          {
+            x: v.x,
+            y: v.y,
+            amp: (v.kind === 'valley' ? -1 : 1) * v.height,
+            sigma: v.width,
+          },
+        ]);
+        return { added: v.kind, x: v.x, y: v.y };
+      },
+    });
+    register({
+      name: 'reset_pes_surface',
+      title: 'Reset PES surface',
+      description: 'Reset the visible PES to its initial example landscape.',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+      execute: () => {
+        setFeatures(preset);
+        setSelected([0, 1]);
+        return { reset: true };
+      },
+    });
+    return () => lifecycle.abort();
+  }, []);
+  const draw = useCallback(() => {
+    const c = canvas.current;
+    if (!c) return;
+    const dpr = devicePixelRatio || 1,
+      w = c.clientWidth,
+      h = c.clientHeight;
+    c.width = w * dpr;
+    c.height = h * dpr;
+    const ctx = c.getContext('2d')!;
+    ctx.scale(dpr, dpr);
+    const S = 100,
+      vals: number[][] = [];
+    let lo = Infinity,
+      hi = -Infinity;
+    for (let j = 0; j < S; j++) {
+      vals[j] = [];
+      for (let i = 0; i < S; i++) {
+        const v = energy(i / (S - 1), j / (S - 1), features);
+        vals[j][i] = v;
+        lo = Math.min(lo, v);
+        hi = Math.max(hi, v);
+      }
+    }
+    const cw = w / S,
+      ch = h / S;
+    for (let j = 0; j < S; j++)
+      for (let i = 0; i < S; i++) {
+        ctx.fillStyle = color((vals[j][i] - lo) / (hi - lo));
+        ctx.fillRect(i * cw, j * ch, cw + 1, ch + 1);
+      }
+    if (contours) {
+      ctx.lineWidth = 0.75;
+      ctx.strokeStyle = 'rgba(255,255,255,.46)';
+      for (let l = 1; l < 13; l++) {
+        const level = lo + ((hi - lo) * l) / 13;
+        ctx.beginPath();
+        for (let j = 0; j < S - 1; j++)
+          for (let i = 0; i < S - 1; i++) {
+            const v = vals[j][i];
+            if ((v - level) * (vals[j][i + 1] - level) < 0) {
+              const x = (i + (level - v) / (vals[j][i + 1] - v)) * cw;
+              ctx.moveTo(x, j * ch);
+              ctx.lineTo(x, (j + 1) * ch);
+            }
+            if ((v - level) * (vals[j + 1][i] - level) < 0) {
+              const y = (j + (level - v) / (vals[j + 1][i] - v)) * ch;
+              ctx.moveTo(i * cw, y);
+              ctx.lineTo((i + 1) * cw, y);
+            }
+          }
+        ctx.stroke();
+      }
+    }
+    const line = (
+      pts: { x: number; y: number }[],
+      stroke: string,
+      dash: number[] = [],
+      lineWidth = 3,
+    ) => {
+      ctx.beginPath();
+      pts.forEach((p, i) =>
+        i ? ctx.lineTo(p.x * w, p.y * h) : ctx.moveTo(p.x * w, p.y * h),
+      );
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.setLineDash(dash);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    strokes.forEach((s) => line(s, '#ffffff', [], 3.5));
+    if (paths && shown.afir) line(paths.afir, '#ff6b8a', [2, 5]);
+    if (paths && shown.gradient) {
+      line(paths.irc, '#d9f6ff');
+      const p = paths.pt;
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = '#17202a';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(p.x * w, p.y * h, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#17202a';
+      ctx.font = '700 11px sans-serif';
+      ctx.fillText('PT', p.x * w + 11, p.y * h - 10);
+    }
+    if (showEQ)
+      minima.forEach((p, i) => {
+        const active = selected.includes(i);
+        ctx.fillStyle = active ? '#fff' : '#0a2535';
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(p.x * w, p.y * h, active ? 7 : 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = '700 10px sans-serif';
+        ctx.fillText(`EQ${i + 1}`, p.x * w + 9, p.y * h + 4);
+      });
+  }, [features, contours, minima, paths, showEQ, shown, selected, strokes]);
+  useEffect(() => {
+    draw();
+    const ro = new ResizeObserver(draw);
+    if (canvas.current) ro.observe(canvas.current);
+    return () => ro.disconnect();
+  }, [draw]);
+  const pos = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    return {
+      x: (e.clientX - r.left) / r.width,
+      y: (e.clientY - r.top) / r.height,
+    };
+  };
+  const pointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!penMode) return;
+    drawing.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    setStrokes((s) => [...s, [pos(e)]]);
+  };
+  const pointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!penMode || !drawing.current) return;
+    const p = pos(e);
+    setStrokes((s) =>
+      s.map((line, i) => (i === s.length - 1 ? [...line, p] : line)),
+    );
+  };
+  const pointerUp = () => {
+    drawing.current = false;
+  };
+  const click = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (penMode) return;
+    const r = e.currentTarget.getBoundingClientRect(),
+      x = (e.clientX - r.left) / r.width,
+      y = (e.clientY - r.top) / r.height,
+      near = minima.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 0.035);
+    if (near >= 0) {
+      setSelected((s) =>
+        s.includes(near) ? s.filter((v) => v !== near) : [...s.slice(-1), near],
+      );
+      return;
+    }
+    setFeatures((f) => [
+      ...f,
+      { x, y, amp: (kind === 'valley' ? -1 : 1) * height, sigma: width },
+    ]);
+  };
+  return (
+    <main className="app-shell">
+      <header className="topbar">
+        <div className="brand">
+          <span className="brand-mark">
+            <Waves size={20} />
+          </span>
+          <div>
+            <h1>PES Playground</h1>
+            <p>Potential energy surface explorer</p>
+          </div>
+        </div>
+        <div className="status">
+          <span />
+          LIVE SURFACE
+        </div>
+      </header>
+      <section className="workspace">
+        <aside className="panel controls">
+          <div className="section-head">
+            <span>01</span>
+            <div>
+              <h2>地形をつくる</h2>
+              <p>キャンバスをクリック</p>
+            </div>
+          </div>
+          <label className="label">配置するポテンシャル</label>
+          <div className="segment">
+            <button
+              className={kind === 'valley' ? 'active' : ''}
+              onClick={() => setKind('valley')}
+            >
+              ⌄ 谷
+            </button>
+            <button
+              className={kind === 'hill' ? 'active' : ''}
+              onClick={() => setKind('hill')}
+            >
+              <Mountain size={15} /> 山
+            </button>
+          </div>
+          <label className="range-label">
+            <span>高さ / 深さ</span>
+            <b>{height.toFixed(1)}</b>
+          </label>
+          <input
+            type="range"
+            min=".3"
+            max="4"
+            step=".1"
+            value={height}
+            onChange={(e) => setHeight(+e.target.value)}
+          />
+          <label className="range-label">
+            <span>広がり σ</span>
+            <b>{width.toFixed(2)}</b>
+          </label>
+          <input
+            type="range"
+            min=".04"
+            max=".2"
+            step=".005"
+            value={width}
+            onChange={(e) => setWidth(+e.target.value)}
+          />
+          <div className="hint">
+            <Sparkles size={16} />
+            <p>
+              通常は山・谷やEQを選択します。ペンをONにすると、PES上へ自由に白線を描けます。
+            </p>
+          </div>
+          <button
+            className="reset"
+            onClick={() => {
+              setFeatures(preset);
+              setSelected([0, 1]);
+              setStrokes([]);
+            }}
+          >
+            <RotateCcw size={15} /> 初期状態に戻す
+          </button>
+        </aside>
+        <section className="surface-card">
+          <div className="surface-head">
+            <div>
+              <span className="eyebrow">ENERGY LANDSCAPE</span>
+              <h2>2D Potential Energy Surface</h2>
+            </div>
+            <div className="toggles">
+              <button
+                className={'tool-button ' + (penMode ? 'active' : '')}
+                aria-pressed={penMode}
+                onClick={() => setPenMode((v) => !v)}
+                title="ペンモード"
+              >
+                <Pencil size={14} /> ペン
+              </button>
+              {strokes.length > 0 && (
+                <button
+                  className="tool-button"
+                  onClick={() => setStrokes([])}
+                  title="手描き線を消去"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+              <label>
+                <input
+                  type="checkbox"
+                  checked={contours}
+                  onChange={(e) => setContours(e.target.checked)}
+                />{' '}
+                等高線
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={showEQ}
+                  onChange={(e) => setShowEQ(e.target.checked)}
+                />{' '}
+                EQ
+              </label>
+            </div>
+          </div>
+          <div className={'canvas-wrap ' + (penMode ? 'pen-active' : '')}>
+            <canvas
+              ref={canvas}
+              onClick={click}
+              onPointerDown={pointerDown}
+              onPointerMove={pointerMove}
+              onPointerUp={pointerUp}
+              onPointerCancel={pointerUp}
+              aria-label="PESキャンバス。ペンモードでは自由線を描けます"
+            />
+            <div className="axis y">Reaction coordinate 2</div>
+            <div className="axis x">Reaction coordinate 1</div>
+            <div className="legend">
+              <span>LOW</span>
+              <i />
+              <span>HIGH</span>
+            </div>
+          </div>
+          <div className="surface-foot">
+            <span>{features.length} features</span>
+            <span>{minima.length} minima detected</span>
+            <span>{selected.length}/2 EQ selected</span>
+          </div>
+        </section>
+        <aside className="panel analysis">
+          <div className="section-head">
+            <span>02</span>
+            <div>
+              <h2>経路をくらべる</h2>
+              <p>検出した極小点を接続</p>
+            </div>
+          </div>
+          <div className="eq-list">
+            {minima.map((p, i) => (
+              <button
+                key={i}
+                className={'eq ' + (selected.includes(i) ? 'active' : '')}
+                onClick={() =>
+                  setSelected((s) =>
+                    s.includes(i)
+                      ? s.filter((v) => v !== i)
+                      : [...s.slice(-1), i],
+                  )
+                }
+              >
+                <i>EQ{i + 1}</i>
+                <span>E = {p.e.toFixed(2)}</span>
+              </button>
+            ))}
+          </div>
+          <button
+            className={'gradient-toggle ' + (shown.gradient ? 'active' : '')}
+            disabled={selected.length !== 2}
+            aria-pressed={shown.gradient}
+            onClick={() => setShown((s) => ({ ...s, gradient: !s.gradient }))}
+          >
+            <GitMerge size={16} />
+            <span>
+              <b>Gradient flow</b>
+              <small>
+                {selected.length === 2
+                  ? shown.gradient
+                    ? '表示中・クリックでOFF'
+                    : '非表示・クリックでON'
+                  : 'EQを2点選んでください'}
+              </small>
+            </span>
+          </button>
+          <div className="paths">
+            <PathToggle
+              color="#ff6b8a"
+              label="AFIR"
+              desc="人工力で誘導"
+              checked={shown.afir}
+              onChange={() => setShown((s) => ({ ...s, afir: !s.afir }))}
+            />
+          </div>
+          <div className="pt-card">
+            <span>PATH TOP</span>
+            <b>{paths && shown.gradient ? paths.pt.e.toFixed(2) : '—'}</b>
+            <small>相対エネルギー</small>
+          </div>
+          <p className="note">
+            ※ 教育用の数値モデルです。Gradient flow / AFIR
+            は概念的な挙動を再現しています。
+          </p>
+        </aside>
+      </section>
+    </main>
+  );
+}
+function PathToggle({
+  color,
+  label,
+  desc,
+  checked,
+  onChange,
+  dash = false,
+}: {
+  color: string;
+  label: string;
+  desc: string;
+  checked: boolean;
+  onChange: () => void;
+  dash?: boolean;
+}) {
+  return (
+    <label className="path-row">
+      <input type="checkbox" checked={checked} onChange={onChange} />
+      <i
+        style={{ background: color, borderStyle: dash ? 'dashed' : 'solid' }}
+      />
+      <span>
+        <b>{label}</b>
+        <small>{desc}</small>
+      </span>
+    </label>
+  );
+}
