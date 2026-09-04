@@ -311,7 +311,7 @@ export default function Home() {
     [kind, setKind] = useState<'valley' | 'hill'>('valley'),
     [height, setHeight] = useState(2),
     [width, setWidth] = useState(0.105),
-    [afirForce, setAfirForce] = useState(25),
+    [afirForce, setAfirForce] = useState(10),
     [directionAngle, setDirectionAngle] = useState(0),
     [randomCount, setRandomCount] = useState(5);
   const [contours, setContours] = useState(true),
@@ -569,7 +569,7 @@ export default function Home() {
     const r = e.currentTarget.getBoundingClientRect(),
       x = e.clientX - (r.left + r.width / 2),
       y = e.clientY - (r.top + r.height / 2),
-      degrees = (Math.atan2(y, x) * 180) / Math.PI + 90;
+      degrees = (Math.atan2(y, x) * 180) / Math.PI;
     setDirectionAngle(Math.round((degrees + 360) % 360));
   };
   const reached = afirRuns.filter((r) => r.endEq !== null).length,
@@ -598,27 +598,27 @@ export default function Home() {
           <div className="section-head">
             <span>01</span>
             <div>
-              <h2>地形をつくる</h2>
-              <p>キャンバスをクリック</p>
+              <h2>Shape the surface</h2>
+              <p>Click anywhere on the canvas</p>
             </div>
           </div>
-          <label className="label">配置するポテンシャル</label>
+          <label className="label">Potential feature</label>
           <div className="segment">
             <button
               className={kind === 'valley' ? 'active' : ''}
               onClick={() => setKind('valley')}
             >
-              ⌄ 谷
+              ⌄ Valley
             </button>
             <button
               className={kind === 'hill' ? 'active' : ''}
               onClick={() => setKind('hill')}
             >
-              <Mountain size={15} /> 山
+              <Mountain size={15} /> Hill
             </button>
           </div>
           <label className="range-label">
-            <span>高さ / 深さ</span>
+            <span>Height / depth</span>
             <b>{height.toFixed(1)}</b>
           </label>
           <input
@@ -630,7 +630,7 @@ export default function Home() {
             onChange={(e) => setHeight(+e.target.value)}
           />
           <label className="range-label">
-            <span>広がり σ</span>
+            <span>Width σ</span>
             <b>{width.toFixed(2)}</b>
           </label>
           <input
@@ -644,11 +644,11 @@ export default function Home() {
           <div className="hint">
             <Sparkles size={16} />
             <p>
-              山・谷を配置した後、経路探索パネルでAFIRの力と投射方向数を設定できます。
+              Add hills and valleys here, then configure AFIR force and direction in the path panel.
             </p>
           </div>
           <button className="reset" onClick={reset}>
-            <RotateCcw size={15} /> 初期状態に戻す
+            <RotateCcw size={15} /> Reset surface
           </button>
         </aside>
         <section className="surface-card">
@@ -663,13 +663,13 @@ export default function Home() {
                 aria-pressed={penMode}
                 onClick={() => setPenMode((v) => !v)}
               >
-                <Pencil size={14} /> ペン
+                <Pencil size={14} /> Draw
               </button>
               {strokes.length > 0 && (
                 <button
                   className="tool-button"
                   onClick={() => setStrokes([])}
-                  title="手描き線を消去"
+                  title="Clear freehand lines"
                 >
                   <Trash2 size={14} />
                 </button>
@@ -680,7 +680,7 @@ export default function Home() {
                   checked={contours}
                   onChange={(e) => setContours(e.target.checked)}
                 />{' '}
-                等高線
+                Contours
               </label>
               <label>
                 <input
@@ -719,7 +719,7 @@ export default function Home() {
           <div className="section-head">
             <span>02</span>
             <div>
-              <h2>経路を探索する</h2>
+              <h2>Explore pathways</h2>
               <p>EQ → AFIR → LUP → IRC</p>
             </div>
           </div>
@@ -742,7 +742,7 @@ export default function Home() {
             ))}
           </div>
           <p className="selection-help">
-            AFIRはノブ方向へ1本、Random AFIRは各EQから指定本数を投射します。
+            AFIR launches one path in the knob direction. Random AFIR launches the requested number from every selected EQ.
           </p>
           <div className="action-grid">
             <button
@@ -764,7 +764,7 @@ export default function Home() {
               <Sparkles size={15} />
               <span>
                 <b>Random AFIR</b>
-                <small>{selectedEq.length} EQ × {randomCount}本</small>
+                <small>{selectedEq.length} EQ × {randomCount} paths</small>
               </span>
             </button>
             <button
@@ -775,7 +775,7 @@ export default function Home() {
               <GitMerge size={15} />
               <span>
                 <b>LUP</b>
-                <small>経路を峠へ緩和</small>
+                <small>Relax paths toward passes</small>
               </span>
             </button>
           </div>
@@ -796,7 +796,7 @@ export default function Home() {
                 onPointerCancel={() => knobDragging.current = false}
                 onKeyDown={(e) => { if(e.key==='ArrowRight'||e.key==='ArrowUp')setDirectionAngle(v=>(v+1)%360);if(e.key==='ArrowLeft'||e.key==='ArrowDown')setDirectionAngle(v=>(v+359)%360); }}
               >
-                <i style={{ transform: `rotate(${directionAngle}deg)` }} />
+                <i style={{ transform: `rotate(${directionAngle + 90}deg)` }} />
                 <b>{directionAngle}°</b>
               </div>
             </div>
@@ -807,13 +807,13 @@ export default function Home() {
             <input
               type="range"
               min="0"
-              max="80"
-              step="1"
+              max="20"
+              step="0.1"
               value={afirForce}
               onChange={(e) => setAfirForce(+e.target.value)}
             />
             <label className="direction-input">
-              <span>Random投射数</span>
+              <span>Random path count</span>
               <input
                 type="number"
                 min="1"
@@ -823,7 +823,7 @@ export default function Home() {
                 onChange={(e) => setRandomCount(Math.max(1, Math.min(72, Number(e.target.value) || 1)))}
               />
             </label>
-            <p>各ボタンを押した時点の方向・人工力・本数で計算します。</p>
+            <p>Each run uses the direction, force, and path count shown at the moment you press its button.</p>
           </div>
           {selectedPt !== null && (
             <button
@@ -834,7 +834,7 @@ export default function Home() {
               <span>
                 <b>IRC</b>
                 <small>
-                  {ircVisible ? '表示中・押してOFF' : '選択PTから勾配降下'}
+                  {ircVisible ? 'Visible · press to hide' : 'Descend from the selected PT'}
                 </small>
               </span>
             </button>
@@ -844,14 +844,14 @@ export default function Home() {
             disabled={!afirRuns.length && !lupRuns.length}
             onClick={clearPaths}
           >
-            <Trash2 size={14} /> 計算経路をすべてクリア
+            <Trash2 size={14} /> Clear all calculated paths
           </button>
           <div className="run-stats">
             <span>
               AFIR <b>{afirRuns.length}</b>
             </span>
             <span>
-              到達 <b>{reached}</b>
+              Reached <b>{reached}</b>
             </span>
             <span>
               PT <b>{lupRuns.length}</b>
@@ -864,11 +864,10 @@ export default function Home() {
                 ? '—'
                 : lupRuns.find((r) => r.id === selectedPt)?.pt.e.toFixed(2)}
             </b>
-            <small>PTをクリックしてIRCへ</small>
+            <small>Select a PT to enable IRC</small>
           </div>
           <p className="note">
-            ※
-            2D教育モデルです。AFIRは減衰付きNewton運動、LUPは端点固定の経路緩和、IRCは負の勾配流で近傍EQへ降下します。
+            Educational 2D model: AFIR uses damped Newtonian motion, LUP relaxes a fixed-endpoint string, and IRC follows negative gradient flow to nearby EQs.
           </p>
         </aside>
       </section>

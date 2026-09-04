@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: 'PES Playground — Potential Energy Surface Explorer',
-  description: '山と谷を配置し、EQ・LUP・AFIR・IRC・PTを視覚的に探索できるインタラクティブPES。',
+  description: 'Interactively shape a potential energy surface and explore EQ, AFIR, LUP, IRC, and path tops.',
   metadataBase: new URL('https://pes-playground-lab.mossy-teal-5279.chatgpt.site'),
   openGraph: {
     title: 'PES Playground',
@@ -35,7 +35,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ja">
+    <html lang="en">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
