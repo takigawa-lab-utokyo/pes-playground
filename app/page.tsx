@@ -833,7 +833,7 @@ export default function Home() {
             <input
               type="range"
               min="0"
-              max="20"
+              max="50"
               step="0.1"
               value={afirForce}
               onChange={(e) => setAfirForce(+e.target.value)}
