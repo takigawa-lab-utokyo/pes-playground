@@ -506,6 +506,7 @@ input[type='range'] {
   border-color: #f3a5b5;
   background: #fff5f7;
 }
+.method-button.random{border-color:#d8bce9;background:#fbf5ff}.method-button.wide{grid-column:1/-1;justify-content:center}.angle-setting{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;font-size:9px;font-weight:700;color:#435d67}.angle-knob{position:relative;width:62px;height:62px;border-radius:50%;background:radial-gradient(circle at 38% 32%,#fff 0 16%,#e9efec 55%,#c8d4cf 100%);border:1px solid #b8c8c2;box-shadow:inset 0 0 0 5px #f7faf9,0 3px 8px rgba(12,37,50,.12);cursor:grab;touch-action:none;user-select:none}.angle-knob:active{cursor:grabbing}.angle-knob>i{position:absolute;inset:5px;transform-origin:50% 50%;pointer-events:none}.angle-knob>i:before{content:'';position:absolute;top:0;left:50%;width:3px;height:18px;border-radius:3px;background:var(--coral);transform:translateX(-50%)}.angle-knob>b{position:absolute;inset:0;display:grid;place-items:center;padding-top:10px;font:800 10px monospace;color:var(--ink);pointer-events:none}.angle-knob:focus-visible{outline:3px solid rgba(8,127,120,.28);outline-offset:2px}
 .method-button.lup {
   border-color: #ead374;
   background: #fffbed;

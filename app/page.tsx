@@ -196,11 +196,14 @@ function relaxLup(
   id: number,
 ): LupRun | null {
   if (run.endEq === null) return null;
-  let path = resample(run.points, 46, fs);
+  const imageCount = 64;
+  let path = resample(run.points, imageCount, fs),
+    stableSteps = 0;
   path[0] = { ...minima[run.startEq] };
   path[path.length - 1] = { ...minima[run.endEq] };
-  for (let iter = 0; iter < 170; iter++) {
+  for (let iter = 0; iter < 650; iter++) {
     const next = path.map((p) => ({ ...p }));
+    let maxMove = 0;
     for (let i = 1; i < path.length - 1; i++) {
       const p = path[i],
         prev = path[i - 1],
@@ -215,18 +218,21 @@ function relaxLup(
         gpx = g.x - dot * ux,
         gpy = g.y - dot * uy,
         lapx = (prev.x + after.x) / 2 - p.x,
-        lapy = (prev.y + after.y) / 2 - p.y;
-      next[i].x = Math.max(
-        0.006,
-        Math.min(0.994, p.x - gpx * 0.0022 + lapx * 0.16),
-      );
-      next[i].y = Math.max(
-        0.006,
-        Math.min(0.994, p.y - gpy * 0.0022 + lapy * 0.16),
-      );
+        lapy = (prev.y + after.y) / 2 - p.y,
+        forceNorm = Math.hypot(gpx, gpy),
+        stepScale = Math.min(0.002, 0.012 / (forceNorm + 1)),
+        nx = Math.max(0.006, Math.min(0.994, p.x - gpx * stepScale + lapx * 0.2)),
+        ny = Math.max(0.006, Math.min(0.994, p.y - gpy * stepScale + lapy * 0.2));
+      maxMove = Math.max(maxMove, Math.hypot(nx - p.x, ny - p.y));
+      next[i].x = nx;
+      next[i].y = ny;
       next[i].e = energy(next[i].x, next[i].y, fs);
     }
-    path = iter % 8 === 7 ? resample(next, 46, fs) : next;
+    path = iter % 4 === 3 ? resample(next, imageCount, fs) : next;
+    path[0] = { ...minima[run.startEq] };
+    path[path.length - 1] = { ...minima[run.endEq] };
+    stableSteps = maxMove < 0.000025 ? stableSteps + 1 : 0;
+    if (stableSteps > 20) break;
   }
   const pt = path.reduce((m, p) => (p.e > m.e ? p : m), path[0]);
   return {
@@ -299,13 +305,15 @@ function makeIrc(lup: LupRun, minima: Point[], fs: Feature[]): IrcRun {
 
 export default function Home() {
   const canvas = useRef<HTMLCanvasElement>(null),
-    drawing = useRef(false);
+    drawing = useRef(false),
+    knobDragging = useRef(false);
   const [features, setFeatures] = useState(preset),
     [kind, setKind] = useState<'valley' | 'hill'>('valley'),
     [height, setHeight] = useState(2),
     [width, setWidth] = useState(0.105),
     [afirForce, setAfirForce] = useState(25),
-    [directionCount, setDirectionCount] = useState(12);
+    [directionAngle, setDirectionAngle] = useState(0),
+    [randomCount, setRandomCount] = useState(5);
   const [contours, setContours] = useState(true),
     [showEQ, setShowEQ] = useState(true),
     [penMode, setPenMode] = useState(false),
@@ -316,8 +324,7 @@ export default function Home() {
     [lupRuns, setLupRuns] = useState<LupRun[]>([]),
     [selectedPt, setSelectedPt] = useState<number | null>(null),
     [ircRuns, setIrcRuns] = useState<IrcRun[]>([]);
-  const seq = useRef(1),
-    batch = useRef(0);
+  const seq = useRef(1);
 
   useEffect(() => {
     setAfirRuns([]);
@@ -328,18 +335,21 @@ export default function Home() {
   }, [features, minima.length]);
   const launchAfir = () => {
     if (selectedEq.length === 0) return;
-    const count = Math.max(1, Math.min(72, Math.round(directionCount))),
-      offset = ((batch.current++ % 6) * Math.PI) / 36,
+    const angle = (directionAngle * Math.PI) / 180,
+      newRuns = selectedEq.map((startEq) =>
+        simulateAfir(startEq, angle, afirForce, minima, features, seq.current++),
+      );
+    setAfirRuns((r) => [...r, ...newRuns]);
+    setLupRuns([]);
+    setIrcRuns([]);
+    setSelectedPt(null);
+  };
+  const launchRandomAfir = () => {
+    if (selectedEq.length === 0) return;
+    const count = Math.max(1, Math.min(72, Math.round(randomCount))),
       newRuns = selectedEq.flatMap((startEq) =>
-        Array.from({ length: count }, (_, i) =>
-          simulateAfir(
-            startEq,
-            offset + (i * Math.PI * 2) / count,
-            afirForce,
-            minima,
-            features,
-            seq.current++,
-          ),
+        Array.from({ length: count }, () =>
+          simulateAfir(startEq, Math.random() * Math.PI * 2, afirForce, minima, features, seq.current++),
         ),
       );
     setAfirRuns((r) => [...r, ...newRuns]);
@@ -555,6 +565,13 @@ export default function Home() {
     setStrokes([]);
     clearPaths();
   };
+  const setAngleFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect(),
+      x = e.clientX - (r.left + r.width / 2),
+      y = e.clientY - (r.top + r.height / 2),
+      degrees = (Math.atan2(y, x) * 180) / Math.PI + 90;
+    setDirectionAngle(Math.round((degrees + 360) % 360));
+  };
   const reached = afirRuns.filter((r) => r.endEq !== null).length,
     ircVisible =
       selectedPt !== null && ircRuns.some((r) => r.ptId === selectedPt);
@@ -725,7 +742,7 @@ export default function Home() {
             ))}
           </div>
           <p className="selection-help">
-            選択中のすべてのEQから、それぞれ設定数のAFIR軌道を投射します。
+            AFIRはノブ方向へ1本、Random AFIRは各EQから指定本数を投射します。
           </p>
           <div className="action-grid">
             <button
@@ -736,11 +753,22 @@ export default function Home() {
               <Play size={15} />
               <span>
                 <b>AFIR</b>
-                <small>{selectedEq.length} EQ × {directionCount}方向・F={afirForce.toFixed(0)}</small>
+                <small>{directionAngle}°・F={afirForce.toFixed(0)}</small>
               </span>
             </button>
             <button
-              className="method-button lup"
+              className="method-button random"
+              disabled={selectedEq.length === 0}
+              onClick={launchRandomAfir}
+            >
+              <Sparkles size={15} />
+              <span>
+                <b>Random AFIR</b>
+                <small>{selectedEq.length} EQ × {randomCount}本</small>
+              </span>
+            </button>
+            <button
+              className="method-button lup wide"
               disabled={reached === 0}
               onClick={runLup}
             >
@@ -752,6 +780,26 @@ export default function Home() {
             </button>
           </div>
           <div className="afir-settings">
+            <div className="angle-setting">
+              <span>AFIR direction</span>
+              <div
+                className="angle-knob"
+                role="slider"
+                tabIndex={0}
+                aria-label="AFIR direction"
+                aria-valuemin={0}
+                aria-valuemax={359}
+                aria-valuenow={directionAngle}
+                onPointerDown={(e) => { knobDragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); setAngleFromPointer(e); }}
+                onPointerMove={(e) => { if (knobDragging.current) setAngleFromPointer(e); }}
+                onPointerUp={() => knobDragging.current = false}
+                onPointerCancel={() => knobDragging.current = false}
+                onKeyDown={(e) => { if(e.key==='ArrowRight'||e.key==='ArrowUp')setDirectionAngle(v=>(v+1)%360);if(e.key==='ArrowLeft'||e.key==='ArrowDown')setDirectionAngle(v=>(v+359)%360); }}
+              >
+                <i style={{ transform: `rotate(${directionAngle}deg)` }} />
+                <b>{directionAngle}°</b>
+              </div>
+            </div>
             <label className="range-label">
               <span>AFIR artificial force</span>
               <b>{afirForce.toFixed(1)}</b>
@@ -765,17 +813,17 @@ export default function Home() {
               onChange={(e) => setAfirForce(+e.target.value)}
             />
             <label className="direction-input">
-              <span>投射方向数</span>
+              <span>Random投射数</span>
               <input
                 type="number"
                 min="1"
                 max="72"
                 step="1"
-                value={directionCount}
-                onChange={(e) => setDirectionCount(Math.max(1, Math.min(72, Number(e.target.value) || 1)))}
+                value={randomCount}
+                onChange={(e) => setRandomCount(Math.max(1, Math.min(72, Number(e.target.value) || 1)))}
               />
             </label>
-            <p>AFIRを押した時点の設定値で新しい軌道群を計算します。</p>
+            <p>各ボタンを押した時点の方向・人工力・本数で計算します。</p>
           </div>
           {selectedPt !== null && (
             <button
