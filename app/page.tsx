@@ -306,6 +306,7 @@ function makeIrc(lup: LupRun, minima: Point[], fs: Feature[]): IrcRun {
 export default function Home() {
   const canvas = useRef<HTMLCanvasElement>(null),
     drawing = useRef(false),
+    currentStroke = useRef<Stroke>([]),
     knobDragging = useRef(false);
   const [features, setFeatures] = useState(preset),
     [kind, setKind] = useState<'valley' | 'hill'>('valley'),
@@ -528,14 +529,34 @@ export default function Home() {
     if (!penMode) return;
     drawing.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
-    setStrokes((s) => [...s, [pos(e)]]);
+    currentStroke.current = [pos(e)];
   };
   const pointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!penMode || !drawing.current) return;
-    const p = pos(e);
-    setStrokes((s) =>
-      s.map((line, i) => (i === s.length - 1 ? [...line, p] : line)),
-    );
+    const p = pos(e),
+      line = currentStroke.current,
+      previous = line.at(-1),
+      c = canvas.current;
+    if (!previous || !c || Math.hypot(p.x - previous.x, p.y - previous.y) < 0.0015) return;
+    const ctx = c.getContext('2d');
+    if (ctx) {
+      ctx.beginPath();
+      ctx.moveTo(previous.x * c.clientWidth, previous.y * c.clientHeight);
+      ctx.lineTo(p.x * c.clientWidth, p.y * c.clientHeight);
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3.5;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+    }
+    line.push(p);
+  };
+  const finishStroke = () => {
+    if (!drawing.current) return;
+    drawing.current = false;
+    const finished = currentStroke.current;
+    currentStroke.current = [];
+    if (finished.length > 1) setStrokes((s) => [...s, finished]);
   };
   const click = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (penMode) return;
@@ -698,8 +719,8 @@ export default function Home() {
               onClick={click}
               onPointerDown={pointerDown}
               onPointerMove={pointerMove}
-              onPointerUp={() => (drawing.current = false)}
-              onPointerCancel={() => (drawing.current = false)}
+              onPointerUp={finishStroke}
+              onPointerCancel={finishStroke}
             />
             <div className="axis y">Reaction coordinate 2</div>
             <div className="axis x">Reaction coordinate 1</div>
