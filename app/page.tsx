@@ -127,26 +127,37 @@ function simulateAfir(
 ): AfirRun {
   const s = minima[startEq];
   let x = s.x,
-    y = s.y,
-    vx = 0,
-    vy = 0;
+    y = s.y;
   const points: Point[] = [{ ...s }],
-    dt = 0.004,
-    forceX = Math.cos(angle) * artificialForce,
-    forceY = Math.sin(angle) * artificialForce;
+    directionX = Math.cos(angle),
+    directionY = Math.sin(angle),
+    forceX = directionX * artificialForce,
+    forceY = directionY * artificialForce,
+    biasedEnergy = (px: number, py: number) =>
+      energy(px, py, fs) -
+      artificialForce * (directionX * (px - s.x) + directionY * (py - s.y));
   let endEq: number | null = null,
-    slow = 0;
-  for (let k = 0; k < 900; k++) {
-    const g = gradient(x, y, fs);
-    vx = (vx + (-g.x * 0.65 + forceX) * dt) * 0.996;
-    vy = (vy + (-g.y * 0.65 + forceY) * dt) * 0.996;
-    const speed = Math.hypot(vx, vy);
-    if (speed > 3.2) {
-      vx *= 3.2 / speed;
-      vy *= 3.2 / speed;
+    stable = 0;
+  for (let k = 0; k < 1200; k++) {
+    const g = gradient(x, y, fs),
+      biasedGradX = g.x - forceX,
+      biasedGradY = g.y - forceY,
+      norm = Math.hypot(biasedGradX, biasedGradY);
+    if (norm < 0.004) stable++;
+    else stable = 0;
+    if (stable > 12) break;
+    let step = Math.min(0.008, 0.001 + norm * 0.0007),
+      nextX = x,
+      nextY = y;
+    const currentBiasedEnergy = biasedEnergy(x, y);
+    for (let trial = 0; trial < 8; trial++) {
+      nextX = x - (biasedGradX / (norm || 1)) * step;
+      nextY = y - (biasedGradY / (norm || 1)) * step;
+      if (biasedEnergy(nextX, nextY) <= currentBiasedEnergy || step < 0.00005) break;
+      step *= 0.5;
     }
-    x += vx * dt;
-    y += vy * dt;
+    x = nextX;
+    y = nextY;
     if (x <= 0.005 || x >= 0.995 || y <= 0.005 || y >= 0.995) {
       x = Math.max(0.005, Math.min(0.995, x));
       y = Math.max(0.005, Math.min(0.995, y));
@@ -154,7 +165,7 @@ function simulateAfir(
       break;
     }
     if (k % 2 === 0) points.push({ x, y, e: energy(x, y, fs) });
-    if (k > 25) {
+    if (k > 12) {
       const hit = minima.findIndex(
         (p, i) => i !== startEq && Math.hypot(p.x - x, p.y - y) < 0.09,
       );
@@ -163,12 +174,6 @@ function simulateAfir(
         points.push({ ...minima[hit] });
         break;
       }
-    }
-    if (speed < 0.012) slow++;
-    else slow = 0;
-    if (k > 70 && slow > 24) {
-      points.push({ x, y, e: energy(x, y, fs) });
-      break;
     }
   }
   if (endEq === null) {
@@ -888,7 +893,7 @@ export default function Home() {
             <small>Select a PT to enable IRC</small>
           </div>
           <p className="note">
-            Educational 2D model: AFIR uses damped Newtonian motion, LUP relaxes a fixed-endpoint string, and IRC follows negative gradient flow to nearby EQs.
+            Educational 2D model: AFIR descends a linearly biased potential, LUP relaxes a fixed-endpoint string, and IRC follows negative gradient flow to nearby EQs.
           </p>
         </aside>
       </section>
