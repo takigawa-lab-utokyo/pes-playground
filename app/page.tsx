@@ -290,7 +290,8 @@ export default function Home() {
     [height, setHeight] = useState(2),
     [width, setWidth] = useState(0.105),
     [momentum, setMomentum] = useState(1.45),
-    [afirForce, setAfirForce] = useState(8);
+    [afirForce, setAfirForce] = useState(25),
+    [directionCount, setDirectionCount] = useState(12);
   const [contours, setContours] = useState(true),
     [showEQ, setShowEQ] = useState(true),
     [penMode, setPenMode] = useState(false),
@@ -313,7 +314,7 @@ export default function Home() {
   }, [features, minima.length]);
   const launchAfir = () => {
     if (selectedEq.length !== 1) return;
-    const count = 12,
+    const count = Math.max(1, Math.min(72, Math.round(directionCount))),
       offset = ((batch.current++ % 6) * Math.PI) / 36,
       newRuns = Array.from({ length: count }, (_, i) =>
         simulateAfir(
@@ -608,34 +609,10 @@ export default function Home() {
             value={width}
             onChange={(e) => setWidth(+e.target.value)}
           />
-          <label className="range-label">
-            <span>AFIR momentum</span>
-            <b>{momentum.toFixed(2)}</b>
-          </label>
-          <input
-            type="range"
-            min=".4"
-            max="2.5"
-            step=".05"
-            value={momentum}
-            onChange={(e) => setMomentum(+e.target.value)}
-          />
-          <label className="range-label">
-            <span>AFIR artificial force</span>
-            <b>{afirForce.toFixed(1)}</b>
-          </label>
-          <input
-            type="range"
-            min="0"
-            max="30"
-            step="0.5"
-            value={afirForce}
-            onChange={(e) => setAfirForce(+e.target.value)}
-          />
           <div className="hint">
             <Sparkles size={16} />
             <p>
-              Momentumは初速、artificial forceは投射方向へ継続的に押す力です。力を上げるほど障壁を越えやすくなります。
+              山・谷を配置した後、経路探索パネルでAFIRの力と投射方向数を設定できます。
             </p>
           </div>
           <button className="reset" onClick={reset}>
@@ -744,7 +721,7 @@ export default function Home() {
               <Play size={15} />
               <span>
                 <b>AFIR</b>
-                <small>12方向・F={afirForce.toFixed(1)}</small>
+                <small>{directionCount}方向・F={afirForce.toFixed(1)}</small>
               </span>
             </button>
             <button
@@ -758,6 +735,44 @@ export default function Home() {
                 <small>経路を峠へ緩和</small>
               </span>
             </button>
+          </div>
+          <div className="afir-settings">
+            <label className="range-label">
+              <span>AFIR artificial force</span>
+              <b>{afirForce.toFixed(1)}</b>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="80"
+              step="1"
+              value={afirForce}
+              onChange={(e) => setAfirForce(+e.target.value)}
+            />
+            <label className="range-label compact-label">
+              <span>Momentum</span>
+              <b>{momentum.toFixed(2)}</b>
+            </label>
+            <input
+              type="range"
+              min="0.4"
+              max="3"
+              step="0.05"
+              value={momentum}
+              onChange={(e) => setMomentum(+e.target.value)}
+            />
+            <label className="direction-input">
+              <span>投射方向数</span>
+              <input
+                type="number"
+                min="1"
+                max="72"
+                step="1"
+                value={directionCount}
+                onChange={(e) => setDirectionCount(Math.max(1, Math.min(72, Number(e.target.value) || 1)))}
+              />
+            </label>
+            <p>AFIRを押した時点の設定値で新しい軌道群を計算します。</p>
           </div>
           {selectedPt !== null && (
             <button
