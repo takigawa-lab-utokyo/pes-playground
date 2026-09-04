@@ -120,7 +120,6 @@ function resample(path: Point[], count: number, fs: Feature[]) {
 function simulateAfir(
   startEq: number,
   angle: number,
-  momentum: number,
   artificialForce: number,
   minima: Point[],
   fs: Feature[],
@@ -129,8 +128,8 @@ function simulateAfir(
   const s = minima[startEq];
   let x = s.x,
     y = s.y,
-    vx = Math.cos(angle) * momentum,
-    vy = Math.sin(angle) * momentum;
+    vx = 0,
+    vy = 0;
   const points: Point[] = [{ ...s }],
     dt = 0.004,
     forceX = Math.cos(angle) * artificialForce,
@@ -157,7 +156,7 @@ function simulateAfir(
     if (k % 2 === 0) points.push({ x, y, e: energy(x, y, fs) });
     if (k > 25) {
       const hit = minima.findIndex(
-        (p, i) => i !== startEq && Math.hypot(p.x - x, p.y - y) < 0.035,
+        (p, i) => i !== startEq && Math.hypot(p.x - x, p.y - y) < 0.09,
       );
       if (hit >= 0) {
         endEq = hit;
@@ -170,6 +169,22 @@ function simulateAfir(
     if (k > 70 && slow > 24) {
       points.push({ x, y, e: energy(x, y, fs) });
       break;
+    }
+  }
+  if (endEq === null) {
+    let best = { distance: Infinity, eq: -1, point: -1 };
+    points.forEach((point, pointIndex) =>
+      minima.forEach((minimum, eqIndex) => {
+        if (eqIndex === startEq) return;
+        const distance = Math.hypot(point.x - minimum.x, point.y - minimum.y);
+        if (distance < best.distance) best = { distance, eq: eqIndex, point: pointIndex };
+      }),
+    );
+    const crossedBarrier = Math.max(...points.map((p) => p.e)) > s.e + 0.12;
+    if (crossedBarrier && best.distance < 0.16) {
+      endEq = best.eq;
+      points.splice(best.point + 1);
+      points.push({ ...minima[endEq] });
     }
   }
   return { id, points, startEq, endEq };
@@ -289,7 +304,6 @@ export default function Home() {
     [kind, setKind] = useState<'valley' | 'hill'>('valley'),
     [height, setHeight] = useState(2),
     [width, setWidth] = useState(0.105),
-    [momentum, setMomentum] = useState(1.45),
     [afirForce, setAfirForce] = useState(25),
     [directionCount, setDirectionCount] = useState(12);
   const [contours, setContours] = useState(true),
@@ -313,18 +327,19 @@ export default function Home() {
     setSelectedEq((s) => s.filter((i) => minima[i]).slice(0, 2));
   }, [features, minima.length]);
   const launchAfir = () => {
-    if (selectedEq.length !== 1) return;
+    if (selectedEq.length === 0) return;
     const count = Math.max(1, Math.min(72, Math.round(directionCount))),
       offset = ((batch.current++ % 6) * Math.PI) / 36,
-      newRuns = Array.from({ length: count }, (_, i) =>
-        simulateAfir(
-          selectedEq[0],
-          offset + (i * Math.PI * 2) / count,
-          momentum,
-          afirForce,
-          minima,
-          features,
-          seq.current++,
+      newRuns = selectedEq.flatMap((startEq) =>
+        Array.from({ length: count }, (_, i) =>
+          simulateAfir(
+            startEq,
+            offset + (i * Math.PI * 2) / count,
+            afirForce,
+            minima,
+            features,
+            seq.current++,
+          ),
         ),
       );
     setAfirRuns((r) => [...r, ...newRuns]);
@@ -710,18 +725,18 @@ export default function Home() {
             ))}
           </div>
           <p className="selection-help">
-            AFIRはEQを1点、経路比較は最大2点選択できます。
+            選択中のすべてのEQから、それぞれ設定数のAFIR軌道を投射します。
           </p>
           <div className="action-grid">
             <button
               className="method-button afir"
-              disabled={selectedEq.length !== 1}
+              disabled={selectedEq.length === 0}
               onClick={launchAfir}
             >
               <Play size={15} />
               <span>
                 <b>AFIR</b>
-                <small>{directionCount}方向・F={afirForce.toFixed(1)}</small>
+                <small>{selectedEq.length} EQ × {directionCount}方向・F={afirForce.toFixed(0)}</small>
               </span>
             </button>
             <button
@@ -748,18 +763,6 @@ export default function Home() {
               step="1"
               value={afirForce}
               onChange={(e) => setAfirForce(+e.target.value)}
-            />
-            <label className="range-label compact-label">
-              <span>Momentum</span>
-              <b>{momentum.toFixed(2)}</b>
-            </label>
-            <input
-              type="range"
-              min="0.4"
-              max="3"
-              step="0.05"
-              value={momentum}
-              onChange={(e) => setMomentum(+e.target.value)}
             />
             <label className="direction-input">
               <span>投射方向数</span>
