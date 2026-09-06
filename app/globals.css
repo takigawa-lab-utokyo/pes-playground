@@ -328,7 +328,15 @@ input[type='range'] {
   color: #fff;
 }
 .tool-button:disabled { opacity: .35; cursor: not-allowed; }
-.focus-toggle { width: 30px; padding: 0; }
+.focus-toggle {
+  width: 30px;
+  flex: 0 0 30px;
+  padding: 0;
+  gap: 0;
+  box-sizing: border-box;
+  justify-content: center;
+}
+.focus-toggle svg { display: block; margin: 0; }
 .view-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -487,6 +495,32 @@ input[type='range'] {
   font-weight: 700;
   cursor: pointer;
 }
+.path-filter {
+  margin: 0 7px 7px;
+  border: 1px solid #b9d4cc;
+  background: #f5faf8;
+  border-radius: 6px;
+  padding: 7px 9px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  color: #31574f;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.path-filter:hover { background: #edf7f3; }
+.path-filter.active { background: #177b70; border-color: #177b70; color: #fff; }
+.path-filter i {
+  min-width: 18px;
+  border-radius: 10px;
+  padding: 1px 5px;
+  background: rgba(23, 123, 112, .12);
+  font: 800 8px monospace;
+  font-style: normal;
+  text-align: center;
+}
+.path-filter.active i { background: rgba(255, 255, 255, .2); }
 .path-list { overflow: auto; padding: 0 7px 7px; display: grid; gap: 5px; }
 .path-list > button,
 .path-group > button {
@@ -503,8 +537,12 @@ input[type='range'] {
 }
 .path-list > button.active,
 .path-group > button.active { border-color: var(--coral); box-shadow: inset 3px 0 var(--coral); background: #fff8f9; }
+.path-list > button.reached { border-color: #a8d4c7; background: #eaf6f1; }
+.path-list > button.reached:hover { background: #e1f2eb; }
+.path-list > button.reached.active { border-color: var(--coral); box-shadow: inset 3px 0 var(--coral); background: #edf8f4; }
 .path-list b { font: 800 9px monospace; }
 .path-list span { font-size: 8px; color: var(--muted); }
+.path-list .eq-route { color: #173c46; font-weight: 800; }
 .path-list small { grid-column: 1/-1; font-size: 8px; color: var(--teal); }
 .path-list > p { margin: 18px 8px; color: var(--muted); font-size: 9px; text-align: center; }
 .path-group { display: grid; gap: 4px; }

@@ -426,6 +426,7 @@ export default function Home() {
     [showAfirPaths, setShowAfirPaths] = useState(true),
     [showLupPaths, setShowLupPaths] = useState(true),
     [showIrcPaths, setShowIrcPaths] = useState(true),
+    [showReachedAfirOnly, setShowReachedAfirOnly] = useState(false),
     [selectedAfir, setSelectedAfir] = useState<number | null>(null),
     [selectedLup, setSelectedLup] = useState<number | null>(null),
     [selectedIrc, setSelectedIrc] = useState<number | null>(null);
@@ -1209,10 +1210,20 @@ export default function Home() {
                     {pathVisibility[pathTab] ? <Eye size={14} /> : <EyeOff size={14} />}
                     {pathVisibility[pathTab] ? 'Hide this view' : 'Show this view'}
                   </button>
+                  {pathTab === 'afir' && (
+                    <button
+                      className={'path-filter ' + (showReachedAfirOnly ? 'active' : '')}
+                      aria-pressed={showReachedAfirOnly}
+                      onClick={() => setShowReachedAfirOnly((value) => !value)}
+                    >
+                      Reached EQ only
+                      <i>{reached}</i>
+                    </button>
+                  )}
                   <div className="path-list">
-                    {pathTab === 'afir' && afirRuns.map((run, i) => (
-                      <button key={run.id} className={selectedAfir === run.id ? 'active' : ''} onClick={() => setSelectedAfir(run.id)}>
-                        <b>AFIR {i + 1}</b><span>EQ{run.startEq + 1} → {run.endEq === null ? 'stopped' : `EQ${run.endEq + 1}`}</span><small>{run.points.length} points</small>
+                    {pathTab === 'afir' && afirRuns.map((run, i) => ({ run, i })).filter(({ run }) => !showReachedAfirOnly || run.endEq !== null).map(({ run, i }) => (
+                      <button key={run.id} className={[selectedAfir === run.id ? 'active' : '', run.endEq !== null ? 'reached' : ''].filter(Boolean).join(' ')} onClick={() => setSelectedAfir(run.id)}>
+                        <b>AFIR {i + 1}</b><span className="eq-route">EQ{run.startEq + 1} → {run.endEq === null ? 'stopped' : `EQ${run.endEq + 1}`}</span><small>{run.points.length} points</small>
                       </button>
                     ))}
                     {pathTab === 'lup' && lupRuns.map((run, i) => (
@@ -1231,7 +1242,7 @@ export default function Home() {
                         <b>IRC {i + 1}</b><span>From selected PT</span><small>{run.branches.reduce((n, b) => n + b.length, 0)} points</small>
                       </button>
                     ))}
-                    {((pathTab === 'afir' && !afirRuns.length) || (pathTab === 'lup' && !lupRuns.length) || (pathTab === 'irc' && !ircRuns.length)) && <p>No calculated paths yet.</p>}
+                    {((pathTab === 'afir' && (!afirRuns.length || (showReachedAfirOnly && reached === 0))) || (pathTab === 'lup' && !lupRuns.length) || (pathTab === 'irc' && !ircRuns.length)) && <p>{pathTab === 'afir' && showReachedAfirOnly ? 'No paths have reached an EQ yet.' : 'No calculated paths yet.'}</p>}
                   </div>
                 </aside>
               </>
