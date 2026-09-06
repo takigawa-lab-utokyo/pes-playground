@@ -330,11 +330,13 @@ function makeIrc(lup: LupRun, minima: Point[], fs: Feature[]): IrcRun {
 
 export default function Home() {
   const canvas = useRef<HTMLCanvasElement>(null),
+    canvas3d = useRef<HTMLCanvasElement>(null),
     drawing = useRef(false),
     currentStroke = useRef<{ x: number; y: number }[]>([]),
     knobDragging = useRef(false),
     featureKnobDragging = useRef(false),
-    pathPanelResizing = useRef(false);
+    pathPanelResizing = useRef(false),
+    orbitDrag = useRef<{ x: number; y: number; azimuth: number; elevation: number } | null>(null);
   const [features, setFeatures] = useState(preset),
     [kind, setKind] = useState<'valley' | 'hill'>('valley'),
     [height, setHeight] = useState(2),
@@ -348,6 +350,9 @@ export default function Home() {
     [showEQ, setShowEQ] = useState(true),
     [penMode, setPenMode] = useState(false),
     [drawColor, setDrawColor] = useState('#ffffff'),
+    [viewMode, setViewMode] = useState<'2d' | '3d'>('2d'),
+    [viewAzimuth, setViewAzimuth] = useState(-35),
+    [viewElevation, setViewElevation] = useState(52),
     [strokes, setStrokes] = useState<Stroke[]>([]),
     [pathPanelOpen, setPathPanelOpen] = useState(true),
     [pathPanelWidth, setPathPanelWidth] = useState(235),
@@ -563,12 +568,107 @@ export default function Home() {
     selectedLup,
     selectedIrc,
   ]);
+  const draw3d = useCallback(() => {
+    const c = canvas3d.current;
+    if (!c) return;
+    const dpr = devicePixelRatio || 1,
+      w = c.clientWidth,
+      h = c.clientHeight;
+    c.width = w * dpr;
+    c.height = h * dpr;
+    const ctx = c.getContext('2d')!;
+    ctx.scale(dpr, dpr);
+    ctx.fillStyle = '#071c2c';
+    ctx.fillRect(0, 0, w, h);
+    const M = 35,
+      samples = Array.from({ length: M }, (_, j) =>
+        Array.from({ length: M }, (_, i) => energy(i / (M - 1), j / (M - 1), features)),
+      ),
+      flat = samples.flat(),
+      lo = Math.min(...flat),
+      hi = Math.max(...flat),
+      span = hi - lo || 1,
+      az = (viewAzimuth * Math.PI) / 180,
+      el = (viewElevation * Math.PI) / 180,
+      project = (x: number, y: number, e: number) => {
+        const dx = x - 0.5,
+          dy = y - 0.5,
+          rx = dx * Math.cos(az) - dy * Math.sin(az),
+          ry = dx * Math.sin(az) + dy * Math.cos(az),
+          rz = ((e - lo) / span - 0.45) * 0.48;
+        return {
+          x: w * 0.5 + rx * w * 0.76,
+          y: h * 0.57 + (ry * Math.sin(el) - rz * Math.cos(el)) * h * 0.72,
+          depth: ry * Math.cos(el) + rz * Math.sin(el),
+        };
+      },
+      cells: { p: ReturnType<typeof project>[]; depth: number; t: number }[] = [];
+    for (let j = 0; j < M - 1; j++)
+      for (let i = 0; i < M - 1; i++) {
+        const pts = [
+          project(i / (M - 1), j / (M - 1), samples[j][i]),
+          project((i + 1) / (M - 1), j / (M - 1), samples[j][i + 1]),
+          project((i + 1) / (M - 1), (j + 1) / (M - 1), samples[j + 1][i + 1]),
+          project(i / (M - 1), (j + 1) / (M - 1), samples[j + 1][i]),
+        ];
+        cells.push({
+          p: pts,
+          depth: pts.reduce((n, p) => n + p.depth, 0) / 4,
+          t: (samples[j][i] + samples[j][i + 1] + samples[j + 1][i + 1] + samples[j + 1][i]) / 4,
+        });
+      }
+    cells.sort((a, b) => a.depth - b.depth).forEach((cell) => {
+      ctx.beginPath();
+      cell.p.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+      ctx.closePath();
+      ctx.fillStyle = color((cell.t - lo) / span);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.075)';
+      ctx.lineWidth = 0.55;
+      ctx.stroke();
+    });
+    const path = (points: Point[], stroke: string, width: number, dash: number[] = []) => {
+      if (points.length < 2) return;
+      ctx.beginPath();
+      points.forEach((p, i) => {
+        const q = project(p.x, p.y, p.e + span * 0.018);
+        if (i) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y);
+      });
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = width;
+      ctx.setLineDash(dash);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    if (showAfirPaths) afirRuns.forEach((r) => path(r.points, selectedAfir === r.id ? '#ffeff3' : '#ff6b8a', selectedAfir === r.id ? 4 : 2.2, [3, 4]));
+    if (showLupPaths) lupRuns.forEach((r) => path(r.points, selectedLup === r.id ? '#fff7bb' : '#f6c85f', selectedLup === r.id ? 4.5 : 3));
+    if (showIrcPaths) ircRuns.forEach((r) => r.branches.forEach((b) => path(b, selectedIrc === r.ptId ? '#fff' : '#d9f6ff', selectedIrc === r.ptId ? 4.5 : 3)));
+    if (showEQ) minima.forEach((p, i) => {
+      const q = project(p.x, p.y, p.e + span * 0.025);
+      ctx.beginPath();
+      ctx.arc(q.x, q.y, selectedEq.includes(i) ? 5.5 : 3.8, 0, Math.PI * 2);
+      ctx.fillStyle = selectedEq.includes(i) ? '#fff' : '#0a2535';
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.5;
+      ctx.fill();
+      ctx.stroke();
+    });
+  }, [features, viewAzimuth, viewElevation, showAfirPaths, showLupPaths, showIrcPaths, afirRuns, lupRuns, ircRuns, selectedAfir, selectedLup, selectedIrc, showEQ, minima, selectedEq]);
   useEffect(() => {
     draw();
     const ro = new ResizeObserver(draw);
     if (canvas.current) ro.observe(canvas.current);
     return () => ro.disconnect();
-  }, [draw]);
+  }, [draw, viewMode]);
+  useEffect(() => {
+    if (viewMode !== '3d') return;
+    draw3d();
+    const ro = new ResizeObserver(draw3d);
+    if (canvas3d.current) ro.observe(canvas3d.current);
+    return () => ro.disconnect();
+  }, [draw3d, viewMode]);
   const pos = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const r = e.currentTarget.getBoundingClientRect();
     return {
@@ -798,9 +898,14 @@ export default function Home() {
               <h2>2D Potential Energy Surface</h2>
             </div>
             <div className="toggles">
+              <div className="view-switch" aria-label="Landscape view mode">
+                <button className={viewMode === '2d' ? 'active' : ''} onClick={() => setViewMode('2d')}>2D</button>
+                <button className={viewMode === '3d' ? 'active' : ''} onClick={() => { setViewMode('3d'); setPenMode(false); }}>3D</button>
+              </div>
               <button
                 className={'tool-button ' + (penMode ? 'active' : '')}
                 aria-pressed={penMode}
+                disabled={viewMode === '3d'}
                 onClick={() => setPenMode((v) => !v)}
               >
                 <Pencil size={14} /> Draw
@@ -843,17 +948,37 @@ export default function Home() {
             </div>
           </div>
           <div className="surface-body">
-            <div className={'canvas-wrap ' + (penMode ? 'pen-active' : '')}>
-              <canvas
-                ref={canvas}
-                onClick={click}
-                onPointerDown={pointerDown}
-                onPointerMove={pointerMove}
-                onPointerUp={finishStroke}
-                onPointerCancel={finishStroke}
-              />
-              <div className="axis y">Reaction coordinate 2</div>
+            <div className={'canvas-wrap ' + (penMode ? 'pen-active' : '') + (viewMode === '3d' ? ' three-d' : '')}>
+              {viewMode === '2d' ? (
+                <canvas
+                  ref={canvas}
+                  onClick={click}
+                  onPointerDown={pointerDown}
+                  onPointerMove={pointerMove}
+                  onPointerUp={finishStroke}
+                  onPointerCancel={finishStroke}
+                />
+              ) : (
+                <canvas
+                  ref={canvas3d}
+                  aria-label="Interactive 3D potential energy surface"
+                  onPointerDown={(e) => {
+                    orbitDrag.current = { x: e.clientX, y: e.clientY, azimuth: viewAzimuth, elevation: viewElevation };
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  }}
+                  onPointerMove={(e) => {
+                    const start = orbitDrag.current;
+                    if (!start) return;
+                    setViewAzimuth(start.azimuth + (e.clientX - start.x) * 0.45);
+                    setViewElevation(Math.max(18, Math.min(78, start.elevation - (e.clientY - start.y) * 0.32)));
+                  }}
+                  onPointerUp={() => orbitDrag.current = null}
+                  onPointerCancel={() => orbitDrag.current = null}
+                />
+              )}
+              <div className="axis y">{viewMode === '2d' ? 'Reaction coordinate 2' : 'Energy / coordinate 2'}</div>
               <div className="axis x">Reaction coordinate 1</div>
+              {viewMode === '3d' && <div className="orbit-help">Drag to rotate viewpoint</div>}
               <div className="legend">
                 <span>LOW</span>
                 <i />

@@ -265,6 +265,27 @@ input[type='range'] {
   border-color: var(--ink);
   color: #fff;
 }
+.tool-button:disabled { opacity: .35; cursor: not-allowed; }
+.view-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 3px;
+  border-radius: 7px;
+  background: #edf2f0;
+}
+.view-switch button {
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  padding: 5px 9px;
+  color: var(--muted);
+  font: 800 9px monospace;
+  cursor: pointer;
+}
+.view-switch button.active {
+  color: #fff;
+  background: var(--ink);
+}
 .draw-color {
   position: relative;
   height: 30px;
@@ -445,6 +466,20 @@ input[type='range'] {
 .canvas-wrap.pen-active canvas {
   cursor: crosshair;
   box-shadow: 0 0 0 3px rgba(140, 225, 210, 0.7);
+}
+.canvas-wrap.three-d canvas { cursor: grab; }
+.canvas-wrap.three-d canvas:active { cursor: grabbing; }
+.orbit-help {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  padding: 6px 8px;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: 6px;
+  background: rgba(8,29,55,.7);
+  color: rgba(255,255,255,.82);
+  font: 700 8px monospace;
+  pointer-events: none;
 }
 .axis {
   position: absolute;
