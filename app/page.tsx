@@ -862,21 +862,41 @@ export default function Home() {
       x = (e.clientX - r.left) / r.width,
       y = (e.clientY - r.top) / r.height;
     if (interactionMode === 'select') {
-      const hit = lupRuns.flatMap((run) => run.pts.map((pt) => ({ run, pt })))
-        .find(({ pt }) => Math.hypot(pt.point.x - x, pt.point.y - y) < 0.035);
-      if (hit) {
-        setSelectedLup(hit.run.id);
-        setSelectedPt(hit.pt.id);
-        return;
-      }
-      if (viewMode === '2d') {
-        const near = minima.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 0.035);
-        if (near >= 0) {
+      const markerHits: (
+        | { type: 'eq'; index: number; distance: number }
+        | { type: 'pt'; runId: number; ptId: number; distance: number }
+      )[] = [];
+      if (viewMode === '2d' && showEQ) minima.forEach((point, index) => {
+        markerHits.push({
+          type: 'eq',
+          index,
+          distance: Math.hypot((point.x - x) * r.width, (point.y - y) * r.height),
+        });
+      });
+      if (showLupPaths) lupRuns.forEach((run) => run.pts.forEach((pt) => {
+        markerHits.push({
+          type: 'pt',
+          runId: run.id,
+          ptId: pt.id,
+          distance: Math.hypot((pt.point.x - x) * r.width, (pt.point.y - y) * r.height),
+        });
+      }));
+      const markerHit = markerHits.reduce<(typeof markerHits)[number] | null>(
+        (best, candidate) => !best || candidate.distance < best.distance ? candidate : best,
+        null,
+      );
+      if (markerHit && markerHit.distance <= 18) {
+        if (markerHit.type === 'eq') {
           setSelectedEq((s) =>
-            s.includes(near) ? s.filter((v) => v !== near) : [...s, near],
+            s.includes(markerHit.index)
+              ? s.filter((value) => value !== markerHit.index)
+              : [...s, markerHit.index],
           );
-          return;
+        } else {
+          setSelectedLup(markerHit.runId);
+          setSelectedPt(markerHit.ptId);
         }
+        return;
       }
       const candidates: { type: PathTab; id: number; distance: number }[] = [];
       if (showAfirPaths) afirRuns.forEach((run) => candidates.push({ type: 'afir', id: run.id, distance: distanceToPath(x, y, run.points, r.width, r.height) }));
