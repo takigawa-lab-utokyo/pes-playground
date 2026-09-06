@@ -1,10 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import {
   Eye,
   EyeOff,
   GitMerge,
+  Maximize2,
+  Minimize2,
   Mountain,
   Pencil,
   Play,
@@ -385,12 +387,14 @@ function makeIrc(lup: LupRun, selected: { id: number; index: number; point: Poin
 export default function Home() {
   const canvas = useRef<HTMLCanvasElement>(null),
     canvas3d = useRef<HTMLCanvasElement>(null),
+    workspaceRef = useRef<HTMLElement>(null),
     drawing = useRef(false),
     currentStroke = useRef<{ x: number; y: number }[]>([]),
     knobDragging = useRef(false),
     featureKnobDragging = useRef(false),
     pathPanelResizing = useRef(false),
-    orbitDrag = useRef<{ x: number; y: number; azimuth: number; elevation: number } | null>(null);
+    orbitDrag = useRef<{ x: number; y: number; azimuth: number; elevation: number } | null>(null),
+    workspaceResize = useRef<'left' | 'right' | null>(null);
   const [features, setFeatures] = useState(preset),
     [featureHistory, setFeatureHistory] = useState<Feature[][]>([]),
     [kind, setKind] = useState<'valley' | 'hill'>('valley'),
@@ -408,6 +412,9 @@ export default function Home() {
     [viewMode, setViewMode] = useState<ViewMode>('2d'),
     [viewAzimuth, setViewAzimuth] = useState(-35),
     [viewElevation, setViewElevation] = useState(52),
+    [focusMode, setFocusMode] = useState(false),
+    [leftPanelWidth, setLeftPanelWidth] = useState(245),
+    [rightPanelWidth, setRightPanelWidth] = useState(250),
     [strokes, setStrokes] = useState<Stroke[]>([]),
     [pathPanelOpen, setPathPanelOpen] = useState(true),
     [pathPanelWidth, setPathPanelWidth] = useState(235),
@@ -883,6 +890,13 @@ export default function Home() {
       if (!pathPanelResizing.current) return;
       const host = e.currentTarget.parentElement?.getBoundingClientRect();
       if (host) setPathPanelWidth(Math.max(180, Math.min(390, host.right - e.clientX)));
+    },
+    resizeWorkspace = (e: React.PointerEvent<HTMLDivElement>) => {
+      const mode = workspaceResize.current,
+        bounds = workspaceRef.current?.getBoundingClientRect();
+      if (!mode || !bounds) return;
+      if (mode === 'left') setLeftPanelWidth(Math.max(190, Math.min(370, e.clientX - bounds.left - 16)));
+      else setRightPanelWidth(Math.max(205, Math.min(390, bounds.right - e.clientX - 16)));
     };
 
   return (
@@ -902,7 +916,11 @@ export default function Home() {
           LIVE SURFACE
         </div>
       </header>
-      <section className="workspace">
+      <section
+        ref={workspaceRef}
+        className={'workspace ' + (focusMode ? 'focus-mode' : '')}
+        style={{ '--left-panel': `${leftPanelWidth}px`, '--right-panel': `${rightPanelWidth}px` } as CSSProperties}
+      >
         <aside className="panel controls">
           <div className="section-head">
             <span>01</span>
@@ -928,13 +946,13 @@ export default function Home() {
           </div>
           <label className="range-label">
             <span>Height / depth</span>
-            <b>{height.toFixed(1)}</b>
+            <b>{height < 1 ? height.toFixed(2) : height.toFixed(1)}</b>
           </label>
           <input
             type="range"
-            min=".3"
+            min=".05"
             max="4"
-            step=".1"
+            step=".05"
             value={height}
             onChange={(e) => setHeight(+e.target.value)}
           />
@@ -1000,6 +1018,16 @@ export default function Home() {
             </button>
           </div>
         </aside>
+        <div
+          className="workspace-resizer left"
+          role="separator"
+          aria-label="Resize surface controls"
+          aria-orientation="vertical"
+          onPointerDown={(e) => { workspaceResize.current = 'left'; e.currentTarget.setPointerCapture(e.pointerId); }}
+          onPointerMove={resizeWorkspace}
+          onPointerUp={() => workspaceResize.current = null}
+          onPointerCancel={() => workspaceResize.current = null}
+        />
         <section className="surface-card">
           <div className="surface-head">
             <div>
@@ -1007,6 +1035,10 @@ export default function Home() {
               <h2>{viewMode.startsWith('afir') ? 'AFIR-biased Virtual Surface' : 'Potential Energy Surface'}</h2>
             </div>
             <div className="toggles">
+              <button className={'tool-button focus-toggle ' + (focusMode ? 'active' : '')} aria-pressed={focusMode} onClick={() => setFocusMode((v) => !v)}>
+                {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                {focusMode ? 'Exit focus' : 'Focus'}
+              </button>
               <div className="view-switch" aria-label="Landscape view mode">
                 <button className={viewMode === '2d' ? 'active' : ''} onClick={() => setViewMode('2d')}>PES 2D</button>
                 <button className={viewMode === '3d' ? 'active' : ''} onClick={() => { setViewMode('3d'); setPenMode(false); }}>PES 3D</button>
@@ -1162,6 +1194,16 @@ export default function Home() {
             <span>{lupRuns.length} LUP paths</span>
           </div>
         </section>
+        <div
+          className="workspace-resizer right"
+          role="separator"
+          aria-label="Resize pathway controls"
+          aria-orientation="vertical"
+          onPointerDown={(e) => { workspaceResize.current = 'right'; e.currentTarget.setPointerCapture(e.pointerId); }}
+          onPointerMove={resizeWorkspace}
+          onPointerUp={() => workspaceResize.current = null}
+          onPointerCancel={() => workspaceResize.current = null}
+        />
         <aside className="panel analysis">
           <div className="section-head">
             <span>02</span>

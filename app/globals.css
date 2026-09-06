@@ -75,13 +75,48 @@ body {
 }
 .workspace {
   display: grid;
-  grid-template-columns: clamp(215px, 18vw, 245px) minmax(430px, 1fr) clamp(225px, 19vw, 250px);
-  gap: 16px;
+  grid-template-columns: var(--left-panel, 245px) 10px minmax(430px, 1fr) 10px var(--right-panel, 250px);
+  gap: 8px;
   padding: 16px;
   max-width: 1600px;
   margin: auto;
   min-height: calc(100vh - 74px);
   height: calc(100dvh - 74px);
+}
+.workspace-resizer {
+  position: relative;
+  align-self: stretch;
+  cursor: col-resize;
+  touch-action: none;
+  border-radius: 8px;
+}
+.workspace-resizer:after {
+  content: '';
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 4px;
+  width: 2px;
+  border-radius: 2px;
+  background: #c9d6d1;
+  transition: background .15s, width .15s, left .15s;
+}
+.workspace-resizer:hover:after,
+.workspace-resizer:active:after {
+  left: 3px;
+  width: 4px;
+  background: var(--teal);
+}
+.workspace.focus-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+.workspace.focus-mode > .controls,
+.workspace.focus-mode > .analysis,
+.workspace.focus-mode > .workspace-resizer,
+.workspace.focus-mode .path-resizer,
+.workspace.focus-mode .path-browser,
+.workspace.focus-mode .open-path-browser {
+  display: none;
 }
 .panel,
 .surface-card {
@@ -799,8 +834,10 @@ input[type='range'] {
 @media (max-width: 1250px) {
   .workspace {
     grid-template-columns: minmax(210px, 25vw) minmax(0, 1fr);
+    gap: 16px;
     height: auto;
   }
+  .workspace-resizer { display: none; }
   .analysis {
     grid-column: 1/-1;
   }
