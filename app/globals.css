@@ -358,6 +358,26 @@ input[type='range'] {
   background: var(--ink);
 }
 .view-switch button:disabled { opacity: .35; cursor: not-allowed; }
+.interaction-switch {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+}
+.interaction-switch button {
+  border: 0;
+  border-radius: 5px;
+  padding: 6px 8px;
+  background: transparent;
+  color: #526a73;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.interaction-switch button.active { background: var(--teal); color: #fff; }
+.interaction-switch button:disabled { opacity: .35; cursor: not-allowed; }
 .draw-color {
   position: relative;
   height: 30px;
@@ -596,6 +616,8 @@ input[type='range'] {
   cursor: crosshair;
   touch-action: none;
 }
+.canvas-wrap.mode-select canvas { cursor: pointer; }
+.canvas-wrap.mode-edit canvas { cursor: cell; }
 .canvas-wrap.pen-active canvas {
   cursor: crosshair;
   box-shadow: 0 0 0 3px rgba(140, 225, 210, 0.7);

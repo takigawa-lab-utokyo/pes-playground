@@ -52,6 +52,7 @@ type LupRun = {
 type IrcRun = { ptId: number; branches: Point[][] };
 type PathTab = 'afir' | 'lup' | 'irc';
 type ViewMode = '2d' | '3d' | 'afir2d' | 'afir3d';
+type InteractionMode = 'edit' | 'select';
 
 const N = 80;
 const palette = [
@@ -410,6 +411,7 @@ export default function Home() {
     [randomCount, setRandomCount] = useState(5);
   const [contours, setContours] = useState(true),
     [showEQ, setShowEQ] = useState(true),
+    [interactionMode, setInteractionMode] = useState<InteractionMode>('select'),
     [penMode, setPenMode] = useState(false),
     [drawColor, setDrawColor] = useState('#ffffff'),
     [viewMode, setViewMode] = useState<ViewMode>('2d'),
@@ -833,22 +835,25 @@ export default function Home() {
     if (penMode || !viewMode.endsWith('2d')) return;
     const r = e.currentTarget.getBoundingClientRect(),
       x = (e.clientX - r.left) / r.width,
-      y = (e.clientY - r.top) / r.height,
-      hit = lupRuns.flatMap((run) => run.pts.map((pt) => ({ run, pt })))
+      y = (e.clientY - r.top) / r.height;
+    if (interactionMode === 'select') {
+      const hit = lupRuns.flatMap((run) => run.pts.map((pt) => ({ run, pt })))
         .find(({ pt }) => Math.hypot(pt.point.x - x, pt.point.y - y) < 0.035);
-    if (hit) {
-      setSelectedLup(hit.run.id);
-      setSelectedPt(hit.pt.id);
+      if (hit) {
+        setSelectedLup(hit.run.id);
+        setSelectedPt(hit.pt.id);
+        return;
+      }
+      if (viewMode !== '2d') return;
+      const near = minima.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 0.035);
+      if (near >= 0) {
+        setSelectedEq((s) =>
+          s.includes(near) ? s.filter((v) => v !== near) : [...s.slice(-1), near],
+        );
+      }
       return;
     }
     if (viewMode !== '2d') return;
-    const near = minima.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 0.035);
-    if (near >= 0) {
-      setSelectedEq((s) =>
-        s.includes(near) ? s.filter((v) => v !== near) : [...s.slice(-1), near],
-      );
-      return;
-    }
     setFeatures((f) => {
       setFeatureHistory((history) => [...history, f]);
       return [...f, {
@@ -1106,6 +1111,24 @@ export default function Home() {
                 <button disabled={!afirRuns.length} className={viewMode === 'afir2d' ? 'active' : ''} onClick={() => { setViewMode('afir2d'); setPenMode(false); }}>AFIR 2D</button>
                 <button disabled={!afirRuns.length} className={viewMode === 'afir3d' ? 'active' : ''} onClick={() => { setViewMode('afir3d'); setPenMode(false); }}>AFIR 3D</button>
               </div>
+              <div className="interaction-switch" aria-label="Canvas interaction mode">
+                <button
+                  className={interactionMode === 'select' && !penMode ? 'active' : ''}
+                  aria-pressed={interactionMode === 'select' && !penMode}
+                  disabled={!viewMode.endsWith('2d')}
+                  onClick={() => { setInteractionMode('select'); setPenMode(false); }}
+                >
+                  PES Select
+                </button>
+                <button
+                  className={interactionMode === 'edit' && !penMode ? 'active' : ''}
+                  aria-pressed={interactionMode === 'edit' && !penMode}
+                  disabled={viewMode !== '2d'}
+                  onClick={() => { setInteractionMode('edit'); setPenMode(false); }}
+                >
+                  PES Edit
+                </button>
+              </div>
               <button
                 className={'tool-button ' + (penMode ? 'active' : '')}
                 aria-pressed={penMode}
@@ -1152,7 +1175,7 @@ export default function Home() {
             </div>
           </div>
           <div className="surface-body">
-            <div className={'canvas-wrap ' + (penMode ? 'pen-active' : '') + (viewMode.endsWith('3d') ? ' three-d' : '')}>
+            <div className={'canvas-wrap ' + (penMode ? 'pen-active' : `mode-${interactionMode}`) + (viewMode.endsWith('3d') ? ' three-d' : '')}>
               {viewMode.endsWith('2d') ? (
                 <canvas
                   ref={canvas}
