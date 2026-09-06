@@ -30,6 +30,9 @@ type AfirRun = {
   points: Point[];
   startEq: number;
   endEq: number | null;
+  angle: number;
+  artificialForce: number;
+  origin: { x: number; y: number };
 };
 type LupRun = {
   id: number;
@@ -41,6 +44,7 @@ type LupRun = {
 };
 type IrcRun = { ptId: number; branches: Point[][] };
 type PathTab = 'afir' | 'lup' | 'irc';
+type ViewMode = '2d' | '3d' | 'afir2d' | 'afir3d';
 
 const N = 80;
 const palette = [
@@ -83,6 +87,12 @@ function gradient(x: number, y: number, fs: Feature[]) {
     x: (energy(x + h, y, fs) - energy(x - h, y, fs)) / (2 * h),
     y: (energy(x, y + h, fs) - energy(x, y - h, fs)) / (2 * h),
   };
+}
+function afirEnergy(x: number, y: number, fs: Feature[], run: AfirRun) {
+  return energy(x, y, fs) - run.artificialForce * (
+    Math.cos(run.angle) * (x - run.origin.x) +
+    Math.sin(run.angle) * (y - run.origin.y)
+  );
 }
 function color(t: number) {
   const z = Math.max(0, Math.min(0.999, t)) * (palette.length - 1),
@@ -212,7 +222,15 @@ function simulateAfir(
       points.push({ ...minima[endEq] });
     }
   }
-  return { id, points, startEq, endEq };
+  return {
+    id,
+    points,
+    startEq,
+    endEq,
+    angle,
+    artificialForce,
+    origin: { x: s.x, y: s.y },
+  };
 }
 function relaxLup(
   run: AfirRun,
@@ -341,7 +359,7 @@ export default function Home() {
     [kind, setKind] = useState<'valley' | 'hill'>('valley'),
     [height, setHeight] = useState(2),
     [width, setWidth] = useState(0.105),
-    [aspect, setAspect] = useState(1),
+    [aspect, setAspect] = useState(2),
     [featureAngle, setFeatureAngle] = useState(0),
     [afirForce, setAfirForce] = useState(10),
     [directionAngle, setDirectionAngle] = useState(0),
@@ -350,7 +368,7 @@ export default function Home() {
     [showEQ, setShowEQ] = useState(true),
     [penMode, setPenMode] = useState(false),
     [drawColor, setDrawColor] = useState('#ffffff'),
-    [viewMode, setViewMode] = useState<'2d' | '3d'>('2d'),
+    [viewMode, setViewMode] = useState<ViewMode>('2d'),
     [viewAzimuth, setViewAzimuth] = useState(-35),
     [viewElevation, setViewElevation] = useState(52),
     [strokes, setStrokes] = useState<Stroke[]>([]),
@@ -388,6 +406,7 @@ export default function Home() {
         simulateAfir(startEq, angle, afirForce, minima, features, seq.current++),
       );
     setAfirRuns((r) => [...r, ...newRuns]);
+    setSelectedAfir(newRuns.at(-1)?.id ?? null);
     setLupRuns([]);
     setIrcRuns([]);
     setSelectedPt(null);
@@ -401,6 +420,7 @@ export default function Home() {
         ),
       );
     setAfirRuns((r) => [...r, ...newRuns]);
+    setSelectedAfir(newRuns.at(-1)?.id ?? null);
     setLupRuns([]);
     setIrcRuns([]);
     setSelectedPt(null);
@@ -430,6 +450,7 @@ export default function Home() {
     setSelectedAfir(null);
     setSelectedLup(null);
     setSelectedIrc(null);
+    setViewMode((v) => v.startsWith('afir') ? '2d' : v);
   };
 
   const draw = useCallback(() => {
@@ -442,6 +463,10 @@ export default function Home() {
     c.height = h * dpr;
     const ctx = c.getContext('2d')!;
     ctx.scale(dpr, dpr);
+    const activeAfir = afirRuns.find((r) => r.id === selectedAfir) ?? afirRuns.at(-1),
+      virtual = viewMode === 'afir2d' && activeAfir,
+      displayEnergy = (x: number, y: number) =>
+        virtual ? afirEnergy(x, y, features, activeAfir) : energy(x, y, features);
     const S = 100,
       vals: number[][] = [];
     let lo = Infinity,
@@ -449,7 +474,7 @@ export default function Home() {
     for (let j = 0; j < S; j++) {
       vals[j] = [];
       for (let i = 0; i < S; i++) {
-        const v = energy(i / (S - 1), j / (S - 1), features);
+        const v = displayEnergy(i / (S - 1), j / (S - 1));
         vals[j][i] = v;
         lo = Math.min(lo, v);
         hi = Math.max(hi, v);
@@ -567,6 +592,7 @@ export default function Home() {
     selectedAfir,
     selectedLup,
     selectedIrc,
+    viewMode,
   ]);
   const draw3d = useCallback(() => {
     const c = canvas3d.current;
@@ -580,9 +606,13 @@ export default function Home() {
     ctx.scale(dpr, dpr);
     ctx.fillStyle = '#071c2c';
     ctx.fillRect(0, 0, w, h);
+    const activeAfir = afirRuns.find((r) => r.id === selectedAfir) ?? afirRuns.at(-1),
+      virtual = viewMode === 'afir3d' && activeAfir,
+      surfaceEnergy = (x: number, y: number) =>
+        virtual ? afirEnergy(x, y, features, activeAfir) : energy(x, y, features);
     const M = 35,
       samples = Array.from({ length: M }, (_, j) =>
-        Array.from({ length: M }, (_, i) => energy(i / (M - 1), j / (M - 1), features)),
+        Array.from({ length: M }, (_, i) => surfaceEnergy(i / (M - 1), j / (M - 1))),
       ),
       flat = samples.flat(),
       lo = Math.min(...flat),
@@ -631,7 +661,7 @@ export default function Home() {
       if (points.length < 2) return;
       ctx.beginPath();
       points.forEach((p, i) => {
-        const q = project(p.x, p.y, p.e + span * 0.018);
+        const q = project(p.x, p.y, surfaceEnergy(p.x, p.y) + span * 0.018);
         if (i) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y);
       });
       ctx.strokeStyle = stroke;
@@ -646,7 +676,7 @@ export default function Home() {
     if (showLupPaths) lupRuns.forEach((r) => path(r.points, selectedLup === r.id ? '#fff7bb' : '#f6c85f', selectedLup === r.id ? 4.5 : 3));
     if (showIrcPaths) ircRuns.forEach((r) => r.branches.forEach((b) => path(b, selectedIrc === r.ptId ? '#fff' : '#d9f6ff', selectedIrc === r.ptId ? 4.5 : 3)));
     if (showEQ) minima.forEach((p, i) => {
-      const q = project(p.x, p.y, p.e + span * 0.025);
+      const q = project(p.x, p.y, surfaceEnergy(p.x, p.y) + span * 0.025);
       ctx.beginPath();
       ctx.arc(q.x, q.y, selectedEq.includes(i) ? 5.5 : 3.8, 0, Math.PI * 2);
       ctx.fillStyle = selectedEq.includes(i) ? '#fff' : '#0a2535';
@@ -655,7 +685,7 @@ export default function Home() {
       ctx.fill();
       ctx.stroke();
     });
-  }, [features, viewAzimuth, viewElevation, showAfirPaths, showLupPaths, showIrcPaths, afirRuns, lupRuns, ircRuns, selectedAfir, selectedLup, selectedIrc, showEQ, minima, selectedEq]);
+  }, [features, viewAzimuth, viewElevation, showAfirPaths, showLupPaths, showIrcPaths, afirRuns, lupRuns, ircRuns, selectedAfir, selectedLup, selectedIrc, showEQ, minima, selectedEq, viewMode]);
   useEffect(() => {
     draw();
     const ro = new ResizeObserver(draw);
@@ -663,7 +693,7 @@ export default function Home() {
     return () => ro.disconnect();
   }, [draw, viewMode]);
   useEffect(() => {
-    if (viewMode !== '3d') return;
+    if (viewMode !== '3d' && viewMode !== 'afir3d') return;
     draw3d();
     const ro = new ResizeObserver(draw3d);
     if (canvas3d.current) ro.observe(canvas3d.current);
@@ -711,7 +741,7 @@ export default function Home() {
       setStrokes((s) => [...s, { points: finished, color: drawColor }]);
   };
   const click = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (penMode) return;
+    if (penMode || viewMode !== '2d') return;
     const r = e.currentTarget.getBoundingClientRect(),
       x = (e.clientX - r.left) / r.width,
       y = (e.clientY - r.top) / r.height,
@@ -857,7 +887,7 @@ export default function Home() {
             onChange={(e) => setAspect(+e.target.value)}
           />
           <div className="feature-angle-setting">
-            <span>Long-axis angle</span>
+            <span>Long-axis angle <small>0° = right</small></span>
             <div
               className="angle-knob feature-angle-knob"
               role="slider"
@@ -895,17 +925,19 @@ export default function Home() {
           <div className="surface-head">
             <div>
               <span className="eyebrow">ENERGY LANDSCAPE</span>
-              <h2>2D Potential Energy Surface</h2>
+              <h2>{viewMode.startsWith('afir') ? 'AFIR-biased Virtual Surface' : 'Potential Energy Surface'}</h2>
             </div>
             <div className="toggles">
               <div className="view-switch" aria-label="Landscape view mode">
-                <button className={viewMode === '2d' ? 'active' : ''} onClick={() => setViewMode('2d')}>2D</button>
-                <button className={viewMode === '3d' ? 'active' : ''} onClick={() => { setViewMode('3d'); setPenMode(false); }}>3D</button>
+                <button className={viewMode === '2d' ? 'active' : ''} onClick={() => setViewMode('2d')}>PES 2D</button>
+                <button className={viewMode === '3d' ? 'active' : ''} onClick={() => { setViewMode('3d'); setPenMode(false); }}>PES 3D</button>
+                <button disabled={!afirRuns.length} className={viewMode === 'afir2d' ? 'active' : ''} onClick={() => { setViewMode('afir2d'); setPenMode(false); }}>AFIR 2D</button>
+                <button disabled={!afirRuns.length} className={viewMode === 'afir3d' ? 'active' : ''} onClick={() => { setViewMode('afir3d'); setPenMode(false); }}>AFIR 3D</button>
               </div>
               <button
                 className={'tool-button ' + (penMode ? 'active' : '')}
                 aria-pressed={penMode}
-                disabled={viewMode === '3d'}
+                disabled={viewMode !== '2d'}
                 onClick={() => setPenMode((v) => !v)}
               >
                 <Pencil size={14} /> Draw
@@ -948,8 +980,8 @@ export default function Home() {
             </div>
           </div>
           <div className="surface-body">
-            <div className={'canvas-wrap ' + (penMode ? 'pen-active' : '') + (viewMode === '3d' ? ' three-d' : '')}>
-              {viewMode === '2d' ? (
+            <div className={'canvas-wrap ' + (penMode ? 'pen-active' : '') + (viewMode.endsWith('3d') ? ' three-d' : '')}>
+              {viewMode.endsWith('2d') ? (
                 <canvas
                   ref={canvas}
                   onClick={click}
@@ -976,9 +1008,10 @@ export default function Home() {
                   onPointerCancel={() => orbitDrag.current = null}
                 />
               )}
-              <div className="axis y">{viewMode === '2d' ? 'Reaction coordinate 2' : 'Energy / coordinate 2'}</div>
+              <div className="axis y">{viewMode.endsWith('2d') ? 'Reaction coordinate 2' : 'Energy / coordinate 2'}</div>
               <div className="axis x">Reaction coordinate 1</div>
-              {viewMode === '3d' && <div className="orbit-help">Drag to rotate viewpoint</div>}
+              {viewMode.endsWith('3d') && <div className="orbit-help">Drag to rotate viewpoint</div>}
+              {viewMode.startsWith('afir') && <div className="bias-badge">LINEAR AFIR BIAS · {selectedAfir ? `PATH ${afirRuns.findIndex((r) => r.id === selectedAfir) + 1}` : 'LATEST PATH'}</div>}
               <div className="legend">
                 <span>LOW</span>
                 <i />
