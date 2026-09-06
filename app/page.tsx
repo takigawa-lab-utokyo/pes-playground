@@ -361,6 +361,31 @@ function descend(
   }
   return out;
 }
+function distanceToPath(
+  x: number,
+  y: number,
+  points: { x: number; y: number }[],
+  width: number,
+  height: number,
+) {
+  let nearest = Infinity;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1],
+      b = points[i],
+      ax = a.x * width,
+      ay = a.y * height,
+      bx = b.x * width,
+      by = b.y * height,
+      px = x * width,
+      py = y * height,
+      dx = bx - ax,
+      dy = by - ay,
+      length2 = dx * dx + dy * dy,
+      t = length2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / length2)) : 0;
+    nearest = Math.min(nearest, Math.hypot(px - (ax + t * dx), py - (ay + t * dy)));
+  }
+  return nearest;
+}
 function makeIrc(lup: LupRun, selected: { id: number; index: number; point: Point }, minima: Point[], fs: Feature[]): IrcRun {
   const i = selected.index,
     chooseSeed = (direction: -1 | 1) => {
@@ -844,12 +869,26 @@ export default function Home() {
         setSelectedPt(hit.pt.id);
         return;
       }
-      if (viewMode !== '2d') return;
-      const near = minima.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 0.035);
-      if (near >= 0) {
-        setSelectedEq((s) =>
-          s.includes(near) ? s.filter((v) => v !== near) : [...s.slice(-1), near],
-        );
+      if (viewMode === '2d') {
+        const near = minima.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 0.035);
+        if (near >= 0) {
+          setSelectedEq((s) =>
+            s.includes(near) ? s.filter((v) => v !== near) : [...s.slice(-1), near],
+          );
+          return;
+        }
+      }
+      const candidates: { type: PathTab; id: number; distance: number }[] = [];
+      if (showAfirPaths) afirRuns.forEach((run) => candidates.push({ type: 'afir', id: run.id, distance: distanceToPath(x, y, run.points, r.width, r.height) }));
+      if (showLupPaths) lupRuns.forEach((run) => candidates.push({ type: 'lup', id: run.id, distance: distanceToPath(x, y, run.points, r.width, r.height) }));
+      if (showIrcPaths) ircRuns.forEach((run) => run.branches.forEach((branch) => candidates.push({ type: 'irc', id: run.ptId, distance: distanceToPath(x, y, branch, r.width, r.height) })));
+      const pathHit = candidates.reduce<(typeof candidates)[number] | null>((best, candidate) => !best || candidate.distance < best.distance ? candidate : best, null);
+      if (pathHit && pathHit.distance <= 9) {
+        setPathTab(pathHit.type);
+        setSelectedAfir(pathHit.type === 'afir' ? pathHit.id : null);
+        setSelectedLup(pathHit.type === 'lup' ? pathHit.id : null);
+        setSelectedIrc(pathHit.type === 'irc' ? pathHit.id : null);
+        setSelectedPt(pathHit.type === 'irc' ? pathHit.id : null);
       }
       return;
     }
