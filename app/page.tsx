@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Eye,
+  EyeOff,
   GitMerge,
   Mountain,
   Pencil,
@@ -10,11 +12,19 @@ import {
   Sparkles,
   Trash2,
   Waves,
+  X,
 } from 'lucide-react';
 
-type Feature = { x: number; y: number; amp: number; sigma: number };
+type Feature = {
+  x: number;
+  y: number;
+  amp: number;
+  sigma: number;
+  aspect: number;
+  angle: number;
+};
 type Point = { x: number; y: number; e: number };
-type Stroke = { x: number; y: number }[];
+type Stroke = { points: { x: number; y: number }[]; color: string };
 type AfirRun = {
   id: number;
   points: Point[];
@@ -30,6 +40,7 @@ type LupRun = {
   pt: Point;
 };
 type IrcRun = { ptId: number; branches: Point[][] };
+type PathTab = 'afir' | 'lup' | 'irc';
 
 const N = 80;
 const palette = [
@@ -43,18 +54,27 @@ const palette = [
   '#db4c55',
 ];
 const preset: Feature[] = [
-  { x: 0.24, y: 0.28, amp: -2.7, sigma: 0.11 },
-  { x: 0.72, y: 0.67, amp: -2.35, sigma: 0.13 },
-  { x: 0.25, y: 0.76, amp: -1.5, sigma: 0.1 },
-  { x: 0.49, y: 0.47, amp: 2.15, sigma: 0.12 },
-  { x: 0.82, y: 0.24, amp: 1.4, sigma: 0.1 },
+  { x: 0.24, y: 0.28, amp: -2.7, sigma: 0.11, aspect: 1, angle: 0 },
+  { x: 0.72, y: 0.67, amp: -2.35, sigma: 0.13, aspect: 1, angle: 0 },
+  { x: 0.25, y: 0.76, amp: -1.5, sigma: 0.1, aspect: 1, angle: 0 },
+  { x: 0.49, y: 0.47, amp: 2.15, sigma: 0.12, aspect: 1, angle: 0 },
+  { x: 0.82, y: 0.24, amp: 1.4, sigma: 0.1, aspect: 1, angle: 0 },
 ];
 
 function energy(x: number, y: number, fs: Feature[]) {
   let e = 0.24 * (x - 0.5) ** 2 + 0.18 * (y - 0.5) ** 2;
-  for (const f of fs)
-    e +=
-      f.amp * Math.exp(-((x - f.x) ** 2 + (y - f.y) ** 2) / (2 * f.sigma ** 2));
+  for (const f of fs) {
+    const dx = x - f.x,
+      dy = y - f.y,
+      c = Math.cos(f.angle),
+      s = Math.sin(f.angle),
+      along = dx * c + dy * s,
+      across = -dx * s + dy * c,
+      longSigma = f.sigma * f.aspect;
+    e += f.amp * Math.exp(
+      -(along ** 2 / (2 * longSigma ** 2) + across ** 2 / (2 * f.sigma ** 2)),
+    );
+  }
   return e;
 }
 function gradient(x: number, y: number, fs: Feature[]) {
@@ -311,19 +331,33 @@ function makeIrc(lup: LupRun, minima: Point[], fs: Feature[]): IrcRun {
 export default function Home() {
   const canvas = useRef<HTMLCanvasElement>(null),
     drawing = useRef(false),
-    currentStroke = useRef<Stroke>([]),
-    knobDragging = useRef(false);
+    currentStroke = useRef<{ x: number; y: number }[]>([]),
+    knobDragging = useRef(false),
+    featureKnobDragging = useRef(false),
+    pathPanelResizing = useRef(false);
   const [features, setFeatures] = useState(preset),
     [kind, setKind] = useState<'valley' | 'hill'>('valley'),
     [height, setHeight] = useState(2),
     [width, setWidth] = useState(0.105),
+    [aspect, setAspect] = useState(1),
+    [featureAngle, setFeatureAngle] = useState(0),
     [afirForce, setAfirForce] = useState(10),
     [directionAngle, setDirectionAngle] = useState(0),
     [randomCount, setRandomCount] = useState(5);
   const [contours, setContours] = useState(true),
     [showEQ, setShowEQ] = useState(true),
     [penMode, setPenMode] = useState(false),
-    [strokes, setStrokes] = useState<Stroke[]>([]);
+    [drawColor, setDrawColor] = useState('#ffffff'),
+    [strokes, setStrokes] = useState<Stroke[]>([]),
+    [pathPanelOpen, setPathPanelOpen] = useState(true),
+    [pathPanelWidth, setPathPanelWidth] = useState(235),
+    [pathTab, setPathTab] = useState<PathTab>('afir'),
+    [showAfirPaths, setShowAfirPaths] = useState(true),
+    [showLupPaths, setShowLupPaths] = useState(true),
+    [showIrcPaths, setShowIrcPaths] = useState(true),
+    [selectedAfir, setSelectedAfir] = useState<number | null>(null),
+    [selectedLup, setSelectedLup] = useState<number | null>(null),
+    [selectedIrc, setSelectedIrc] = useState<number | null>(null);
   const minima = useMemo(() => detectMinima(features), [features]),
     [selectedEq, setSelectedEq] = useState<number[]>([0]),
     [afirRuns, setAfirRuns] = useState<AfirRun[]>([]),
@@ -337,6 +371,9 @@ export default function Home() {
     setLupRuns([]);
     setIrcRuns([]);
     setSelectedPt(null);
+    setSelectedAfir(null);
+    setSelectedLup(null);
+    setSelectedIrc(null);
     setSelectedEq((s) => s.filter((i) => minima[i]).slice(0, 2));
   }, [features, minima.length]);
   const launchAfir = () => {
@@ -385,6 +422,9 @@ export default function Home() {
     setLupRuns([]);
     setIrcRuns([]);
     setSelectedPt(null);
+    setSelectedAfir(null);
+    setSelectedLup(null);
+    setSelectedIrc(null);
   };
 
   const draw = useCallback(() => {
@@ -459,13 +499,13 @@ export default function Home() {
       ctx.stroke();
       ctx.setLineDash([]);
     };
-    strokes.forEach((s) => line(s, '#fff', [], 3.5));
-    afirRuns.forEach((r) => {
+    strokes.forEach((s) => line(s.points, s.color, [], 3.5));
+    if (showAfirPaths) afirRuns.forEach((r) => {
       line(
         r.points,
         r.endEq === null ? 'rgba(255,107,138,.52)' : '#ff6b8a',
         [2, 4],
-        1.8,
+        selectedAfir === r.id ? 3.2 : 1.8,
       );
       const p = r.points.at(-1)!;
       ctx.fillStyle = r.endEq === null ? '#ffb1c1' : '#ff6b8a';
@@ -473,8 +513,8 @@ export default function Home() {
       ctx.arc(p.x * w, p.y * h, 2.5, 0, Math.PI * 2);
       ctx.fill();
     });
-    lupRuns.forEach((r, i) => {
-      line(r.points, ['#f6c85f', '#ffa85a', '#f4e36c'][i % 3], [], 2.8);
+    if (showLupPaths) lupRuns.forEach((r, i) => {
+      line(r.points, ['#f6c85f', '#ffa85a', '#f4e36c'][i % 3], [], selectedLup === r.id ? 4.2 : 2.8);
       const p = r.pt,
         active = selectedPt === r.id;
       ctx.fillStyle = active ? '#fff5a8' : '#fff';
@@ -488,8 +528,8 @@ export default function Home() {
       ctx.font = '700 10px sans-serif';
       ctx.fillText(`PT${i + 1}`, p.x * w + 9, p.y * h - 8);
     });
-    ircRuns.forEach((r) =>
-      r.branches.forEach((b) => line(b, '#d9f6ff', [], 3)),
+    if (showIrcPaths) ircRuns.forEach((r) =>
+      r.branches.forEach((b) => line(b, selectedIrc === r.ptId ? '#ffffff' : '#d9f6ff', [], selectedIrc === r.ptId ? 4.5 : 3)),
     );
     if (showEQ)
       minima.forEach((p, i) => {
@@ -516,6 +556,12 @@ export default function Home() {
     minima,
     selectedEq,
     selectedPt,
+    showAfirPaths,
+    showLupPaths,
+    showIrcPaths,
+    selectedAfir,
+    selectedLup,
+    selectedIrc,
   ]);
   useEffect(() => {
     draw();
@@ -548,7 +594,7 @@ export default function Home() {
       ctx.beginPath();
       ctx.moveTo(previous.x * c.clientWidth, previous.y * c.clientHeight);
       ctx.lineTo(p.x * c.clientWidth, p.y * c.clientHeight);
-      ctx.strokeStyle = '#fff';
+      ctx.strokeStyle = drawColor;
       ctx.lineWidth = 3.5;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
@@ -561,7 +607,8 @@ export default function Home() {
     drawing.current = false;
     const finished = currentStroke.current;
     currentStroke.current = [];
-    if (finished.length > 1) setStrokes((s) => [...s, finished]);
+    if (finished.length > 1)
+      setStrokes((s) => [...s, { points: finished, color: drawColor }]);
   };
   const click = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (penMode) return;
@@ -582,7 +629,14 @@ export default function Home() {
     }
     setFeatures((f) => [
       ...f,
-      { x, y, amp: (kind === 'valley' ? -1 : 1) * height, sigma: width },
+      {
+        x,
+        y,
+        amp: (kind === 'valley' ? -1 : 1) * height,
+        sigma: width,
+        aspect,
+        angle: (featureAngle * Math.PI) / 180,
+      },
     ]);
   };
   const reset = () => {
@@ -591,16 +645,39 @@ export default function Home() {
     setStrokes([]);
     clearPaths();
   };
-  const setAngleFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+  const clearSurface = () => {
+    setFeatures([]);
+    setSelectedEq([]);
+    setStrokes([]);
+    clearPaths();
+  };
+  const angleFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect(),
       x = e.clientX - (r.left + r.width / 2),
-      y = e.clientY - (r.top + r.height / 2),
-      degrees = (Math.atan2(y, x) * 180) / Math.PI;
-    setDirectionAngle(Math.round((degrees + 360) % 360));
+      y = e.clientY - (r.top + r.height / 2);
+    return Math.round(((Math.atan2(y, x) * 180) / Math.PI + 360) % 360);
+  };
+  const setAngleFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    setDirectionAngle(angleFromPointer(e));
   };
   const reached = afirRuns.filter((r) => r.endEq !== null).length,
     ircVisible =
       selectedPt !== null && ircRuns.some((r) => r.ptId === selectedPt);
+  const pathVisibility = {
+      afir: showAfirPaths,
+      lup: showLupPaths,
+      irc: showIrcPaths,
+    },
+    togglePathVisibility = () => {
+      if (pathTab === 'afir') setShowAfirPaths((v) => !v);
+      if (pathTab === 'lup') setShowLupPaths((v) => !v);
+      if (pathTab === 'irc') setShowIrcPaths((v) => !v);
+    },
+    resizePathPanel = (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!pathPanelResizing.current) return;
+      const host = e.currentTarget.parentElement?.getBoundingClientRect();
+      if (host) setPathPanelWidth(Math.max(180, Math.min(390, host.right - e.clientX)));
+    };
 
   return (
     <main className="app-shell">
@@ -667,15 +744,52 @@ export default function Home() {
             value={width}
             onChange={(e) => setWidth(+e.target.value)}
           />
+          <label className="range-label">
+            <span>Long / short axis ratio</span>
+            <b>{aspect.toFixed(1)}×</b>
+          </label>
+          <input
+            type="range"
+            min="1"
+            max="4"
+            step=".1"
+            value={aspect}
+            onChange={(e) => setAspect(+e.target.value)}
+          />
+          <div className="feature-angle-setting">
+            <span>Long-axis angle</span>
+            <div
+              className="angle-knob feature-angle-knob"
+              role="slider"
+              tabIndex={0}
+              aria-label="Long-axis angle"
+              aria-valuemin={0}
+              aria-valuemax={359}
+              aria-valuenow={featureAngle}
+              onPointerDown={(e) => { featureKnobDragging.current = true; e.currentTarget.setPointerCapture(e.pointerId); setFeatureAngle(angleFromPointer(e)); }}
+              onPointerMove={(e) => { if (featureKnobDragging.current) setFeatureAngle(angleFromPointer(e)); }}
+              onPointerUp={() => featureKnobDragging.current = false}
+              onPointerCancel={() => featureKnobDragging.current = false}
+              onKeyDown={(e) => { if(e.key==='ArrowRight'||e.key==='ArrowUp')setFeatureAngle(v=>(v+1)%360);if(e.key==='ArrowLeft'||e.key==='ArrowDown')setFeatureAngle(v=>(v+359)%360); }}
+            >
+              <i style={{ transform: `rotate(${featureAngle + 90}deg)` }} />
+              <b>{featureAngle}°</b>
+            </div>
+          </div>
           <div className="hint">
             <Sparkles size={16} />
             <p>
               Add hills and valleys here, then configure AFIR force and direction in the path panel.
             </p>
           </div>
-          <button className="reset" onClick={reset}>
-            <RotateCcw size={15} /> Reset surface
-          </button>
+          <div className="surface-actions">
+            <button className="reset" onClick={reset}>
+              <RotateCcw size={15} /> Reset surface
+            </button>
+            <button className="clear-surface" onClick={clearSurface}>
+              <Trash2 size={15} /> Clear all
+            </button>
+          </div>
         </aside>
         <section className="surface-card">
           <div className="surface-head">
@@ -691,6 +805,16 @@ export default function Home() {
               >
                 <Pencil size={14} /> Draw
               </button>
+              <label className="draw-color" title="Choose drawing color">
+                <input
+                  type="color"
+                  value={drawColor}
+                  onChange={(e) => setDrawColor(e.target.value)}
+                  aria-label="Drawing color"
+                />
+                <i style={{ background: drawColor }} />
+                Color
+              </label>
               {strokes.length > 0 && (
                 <button
                   className="tool-button"
@@ -718,22 +842,76 @@ export default function Home() {
               </label>
             </div>
           </div>
-          <div className={'canvas-wrap ' + (penMode ? 'pen-active' : '')}>
-            <canvas
-              ref={canvas}
-              onClick={click}
-              onPointerDown={pointerDown}
-              onPointerMove={pointerMove}
-              onPointerUp={finishStroke}
-              onPointerCancel={finishStroke}
-            />
-            <div className="axis y">Reaction coordinate 2</div>
-            <div className="axis x">Reaction coordinate 1</div>
-            <div className="legend">
-              <span>LOW</span>
-              <i />
-              <span>HIGH</span>
+          <div className="surface-body">
+            <div className={'canvas-wrap ' + (penMode ? 'pen-active' : '')}>
+              <canvas
+                ref={canvas}
+                onClick={click}
+                onPointerDown={pointerDown}
+                onPointerMove={pointerMove}
+                onPointerUp={finishStroke}
+                onPointerCancel={finishStroke}
+              />
+              <div className="axis y">Reaction coordinate 2</div>
+              <div className="axis x">Reaction coordinate 1</div>
+              <div className="legend">
+                <span>LOW</span>
+                <i />
+                <span>HIGH</span>
+              </div>
             </div>
+            {pathPanelOpen ? (
+              <>
+                <div
+                  className="path-resizer"
+                  role="separator"
+                  aria-label="Resize path browser"
+                  aria-orientation="vertical"
+                  onPointerDown={(e) => { pathPanelResizing.current = true; e.currentTarget.setPointerCapture(e.pointerId); }}
+                  onPointerMove={resizePathPanel}
+                  onPointerUp={() => pathPanelResizing.current = false}
+                  onPointerCancel={() => pathPanelResizing.current = false}
+                />
+                <aside className="path-browser" style={{ width: pathPanelWidth }}>
+                  <div className="path-browser-head">
+                    <b>PATH VIEWS</b>
+                    <button onClick={() => setPathPanelOpen(false)} aria-label="Close path views"><X size={14} /></button>
+                  </div>
+                  <div className="path-tabs" role="tablist">
+                    {(['afir', 'lup', 'irc'] as PathTab[]).map((tab) => (
+                      <button key={tab} role="tab" aria-selected={pathTab === tab} className={pathTab === tab ? 'active' : ''} onClick={() => setPathTab(tab)}>
+                        {tab.toUpperCase()}
+                        <i>{tab === 'afir' ? afirRuns.length : tab === 'lup' ? lupRuns.length : ircRuns.length}</i>
+                      </button>
+                    ))}
+                  </div>
+                  <button className="path-visibility" onClick={togglePathVisibility}>
+                    {pathVisibility[pathTab] ? <Eye size={14} /> : <EyeOff size={14} />}
+                    {pathVisibility[pathTab] ? 'Hide this view' : 'Show this view'}
+                  </button>
+                  <div className="path-list">
+                    {pathTab === 'afir' && afirRuns.map((run, i) => (
+                      <button key={run.id} className={selectedAfir === run.id ? 'active' : ''} onClick={() => setSelectedAfir(run.id)}>
+                        <b>AFIR {i + 1}</b><span>EQ{run.startEq + 1} → {run.endEq === null ? 'stopped' : `EQ${run.endEq + 1}`}</span><small>{run.points.length} points</small>
+                      </button>
+                    ))}
+                    {pathTab === 'lup' && lupRuns.map((run, i) => (
+                      <button key={run.id} className={selectedLup === run.id ? 'active' : ''} onClick={() => { setSelectedLup(run.id); setSelectedPt(run.id); }}>
+                        <b>LUP {i + 1}</b><span>EQ{run.startEq + 1} → EQ{run.endEq + 1}</span><small>PT E={run.pt.e.toFixed(2)}</small>
+                      </button>
+                    ))}
+                    {pathTab === 'irc' && ircRuns.map((run, i) => (
+                      <button key={run.ptId} className={selectedIrc === run.ptId ? 'active' : ''} onClick={() => { setSelectedIrc(run.ptId); setSelectedPt(run.ptId); }}>
+                        <b>IRC {i + 1}</b><span>From selected PT</span><small>{run.branches.reduce((n, b) => n + b.length, 0)} points</small>
+                      </button>
+                    ))}
+                    {((pathTab === 'afir' && !afirRuns.length) || (pathTab === 'lup' && !lupRuns.length) || (pathTab === 'irc' && !ircRuns.length)) && <p>No calculated paths yet.</p>}
+                  </div>
+                </aside>
+              </>
+            ) : (
+              <button className="open-path-browser" onClick={() => setPathPanelOpen(true)}>Paths</button>
+            )}
           </div>
           <div className="surface-foot">
             <span>{afirRuns.length} AFIR paths</span>
