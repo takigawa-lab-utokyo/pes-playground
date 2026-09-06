@@ -358,25 +358,26 @@ function descend(
 }
 function makeIrc(lup: LupRun, selected: { id: number; index: number; point: Point }, minima: Point[], fs: Feature[]): IrcRun {
   const i = selected.index,
-    a = lup.points[Math.max(0, i - 1)],
-    b = lup.points[Math.min(lup.points.length - 1, i + 1)],
-    dx = b.x - a.x,
-    dy = b.y - a.y,
-    n = Math.hypot(dx, dy) || 1,
-    eps = 0.009;
+    chooseSeed = (direction: -1 | 1) => {
+      let index = i;
+      while (index + direction >= 0 && index + direction < lup.points.length) {
+        index += direction;
+        const p = lup.points[index];
+        if (Math.hypot(p.x - selected.point.x, p.y - selected.point.y) >= 0.028) break;
+      }
+      return { index, point: lup.points[index] };
+    },
+    left = chooseSeed(-1),
+    right = chooseSeed(1),
+    leftLead = lup.points.slice(left.index, i + 1).reverse(),
+    rightLead = lup.points.slice(i, right.index + 1),
+    leftDescent = descend(left.point, minima, fs),
+    rightDescent = descend(right.point, minima, fs);
   return {
     ptId: selected.id,
     branches: [
-      descend(
-        { x: selected.point.x - (dx / n) * eps, y: selected.point.y - (dy / n) * eps },
-        minima,
-        fs,
-      ),
-      descend(
-        { x: selected.point.x + (dx / n) * eps, y: selected.point.y + (dy / n) * eps },
-        minima,
-        fs,
-      ),
+      [...leftLead, ...leftDescent.slice(1)],
+      [...rightLead, ...rightDescent.slice(1)],
     ],
   };
 }
@@ -678,7 +679,7 @@ export default function Home() {
           dy = y - 0.5,
           rx = dx * Math.cos(az) - dy * Math.sin(az),
           ry = dx * Math.sin(az) + dy * Math.cos(az),
-          rz = ((e - lo) / span - 0.45) * 0.48;
+          rz = ((e - lo) / span - 0.45) * (virtual ? 0.78 : 0.48);
         return {
           x: w * 0.5 + rx * w * 0.76,
           y: h * 0.57 + (ry * Math.sin(el) - rz * Math.cos(el)) * h * 0.72,
