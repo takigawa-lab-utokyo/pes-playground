@@ -11,6 +11,7 @@ import {
   RotateCcw,
   Sparkles,
   Trash2,
+  Undo2,
   Waves,
   X,
 } from 'lucide-react';
@@ -356,6 +357,7 @@ export default function Home() {
     pathPanelResizing = useRef(false),
     orbitDrag = useRef<{ x: number; y: number; azimuth: number; elevation: number } | null>(null);
   const [features, setFeatures] = useState(preset),
+    [featureHistory, setFeatureHistory] = useState<Feature[][]>([]),
     [kind, setKind] = useState<'valley' | 'hill'>('valley'),
     [height, setHeight] = useState(2),
     [width, setWidth] = useState(0.105),
@@ -757,29 +759,37 @@ export default function Home() {
       );
       return;
     }
-    setFeatures((f) => [
-      ...f,
-      {
+    setFeatures((f) => {
+      setFeatureHistory((history) => [...history, f]);
+      return [...f, {
         x,
         y,
         amp: (kind === 'valley' ? -1 : 1) * height,
         sigma: width,
         aspect,
         angle: (featureAngle * Math.PI) / 180,
-      },
-    ]);
+      }];
+    });
   };
   const reset = () => {
     setFeatures(preset);
+    setFeatureHistory([]);
     setSelectedEq([0]);
     setStrokes([]);
     clearPaths();
   };
   const clearSurface = () => {
     setFeatures([]);
+    setFeatureHistory([]);
     setSelectedEq([]);
     setStrokes([]);
     clearPaths();
+  };
+  const undoFeature = () => {
+    const previous = featureHistory.at(-1);
+    if (!previous) return;
+    setFeatures(previous);
+    setFeatureHistory((history) => history.slice(0, -1));
   };
   const angleFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect(),
@@ -913,6 +923,9 @@ export default function Home() {
             </p>
           </div>
           <div className="surface-actions">
+            <button className="undo-surface" disabled={!featureHistory.length} onClick={undoFeature}>
+              <Undo2 size={15} /> Undo last
+            </button>
             <button className="reset" onClick={reset}>
               <RotateCcw size={15} /> Reset surface
             </button>

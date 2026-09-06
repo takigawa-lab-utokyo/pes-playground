@@ -181,11 +181,12 @@ input[type='range'] {
 }
 .surface-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-top: 17px;
 }
 .reset,
+.undo-surface,
 .clear-surface {
   width: 100%;
   background: white;
@@ -201,6 +202,8 @@ input[type='range'] {
   gap: 7px;
   cursor: pointer;
 }
+.undo-surface { grid-column: 1 / -1; }
+.undo-surface:disabled { opacity: .35; cursor: not-allowed; }
 .clear-surface {
   border-color: #efc8cf;
   color: #b44e62;
