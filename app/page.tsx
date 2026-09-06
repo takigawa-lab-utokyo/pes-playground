@@ -473,7 +473,7 @@ export default function Home() {
     setSelectedAfir(null);
     setSelectedLup(null);
     setSelectedIrc(null);
-    setSelectedEq((s) => s.filter((i) => minima[i]).slice(0, 2));
+    setSelectedEq((s) => s.filter((i) => minima[i]));
   }, [features, minima.length]);
   const launchAfir = () => {
     if (selectedEq.length === 0) return;
@@ -873,7 +873,7 @@ export default function Home() {
         const near = minima.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 0.035);
         if (near >= 0) {
           setSelectedEq((s) =>
-            s.includes(near) ? s.filter((v) => v !== near) : [...s.slice(-1), near],
+            s.includes(near) ? s.filter((v) => v !== near) : [...s, near],
           );
           return;
         }
@@ -1363,7 +1363,7 @@ export default function Home() {
                   setSelectedEq((s) =>
                     s.includes(i)
                       ? s.filter((v) => v !== i)
-                      : [...s.slice(-1), i],
+                      : [...s, i],
                   )
                 }
               >
