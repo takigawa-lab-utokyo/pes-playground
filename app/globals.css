@@ -220,6 +220,28 @@ input[type='range'] {
   gap: 8px;
   margin-top: 17px;
 }
+.surface-file-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 12px;
+}
+.surface-file-actions button {
+  border: 1px solid #bdd8d1;
+  border-radius: 8px;
+  background: #f7fcfa;
+  color: var(--teal);
+  padding: 8px 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.surface-file-actions input { display: none; }
+.file-status { margin: 6px 2px 0; color: var(--muted); font-size: 8px; line-height: 1.4; }
 .reset,
 .undo-surface,
 .clear-surface {
@@ -306,6 +328,7 @@ input[type='range'] {
   color: #fff;
 }
 .tool-button:disabled { opacity: .35; cursor: not-allowed; }
+.focus-toggle { width: 30px; padding: 0; }
 .view-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;

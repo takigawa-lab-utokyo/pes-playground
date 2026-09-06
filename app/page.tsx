@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import {
   Eye,
   EyeOff,
+  Download,
   GitMerge,
   Maximize2,
   Minimize2,
@@ -14,6 +15,7 @@ import {
   Sparkles,
   Trash2,
   Undo2,
+  Upload,
   Waves,
   X,
 } from 'lucide-react';
@@ -135,6 +137,16 @@ function color(t: number) {
     a = palette[i].match(/\w\w/g)!.map((v) => parseInt(v, 16)),
     b = palette[i + 1].match(/\w\w/g)!.map((v) => parseInt(v, 16));
   return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * q)).join(',')})`;
+}
+function distanceToPath(x: number, y: number, points: Point[]) {
+  let best = Infinity;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1], b = points[i], dx = b.x - a.x, dy = b.y - a.y,
+      length2 = dx * dx + dy * dy,
+      t = length2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / length2)) : 0;
+    best = Math.min(best, Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t)));
+  }
+  return best;
 }
 function detectMinima(fs: Feature[]) {
   const vals = Array.from({ length: N }, (_, j) =>
@@ -387,6 +399,7 @@ function makeIrc(lup: LupRun, selected: { id: number; index: number; point: Poin
 export default function Home() {
   const canvas = useRef<HTMLCanvasElement>(null),
     canvas3d = useRef<HTMLCanvasElement>(null),
+    fileInput = useRef<HTMLInputElement>(null),
     workspaceRef = useRef<HTMLElement>(null),
     drawing = useRef(false),
     currentStroke = useRef<{ x: number; y: number }[]>([]),
@@ -415,6 +428,7 @@ export default function Home() {
     [focusMode, setFocusMode] = useState(false),
     [leftPanelWidth, setLeftPanelWidth] = useState(245),
     [rightPanelWidth, setRightPanelWidth] = useState(250),
+    [fileStatus, setFileStatus] = useState(''),
     [strokes, setStrokes] = useState<Stroke[]>([]),
     [pathPanelOpen, setPathPanelOpen] = useState(true),
     [pathPanelWidth, setPathPanelWidth] = useState(235),
@@ -470,7 +484,9 @@ export default function Home() {
     setSelectedPt(null);
   };
   const runLup = () => {
-    const made = afirRuns
+    const chosen = afirRuns.find((r) => r.id === selectedAfir);
+    if (!chosen) return;
+    const made = [chosen]
       .map((r) => relaxLup(r, minima, features, seq.current++))
       .filter((r): r is LupRun => !!r);
     setLupRuns(made);
@@ -814,7 +830,7 @@ export default function Home() {
       setStrokes((s) => [...s, { points: finished, color: drawColor }]);
   };
   const click = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (penMode || viewMode !== '2d') return;
+    if (penMode || !viewMode.endsWith('2d')) return;
     const r = e.currentTarget.getBoundingClientRect(),
       x = (e.clientX - r.left) / r.width,
       y = (e.clientY - r.top) / r.height,
@@ -825,6 +841,15 @@ export default function Home() {
       setSelectedPt(hit.pt.id);
       return;
     }
+    const afirHit = afirRuns
+      .map((run) => ({ run, distance: distanceToPath(x, y, run.points) }))
+      .sort((a, b) => a.distance - b.distance)[0];
+    if (afirHit && afirHit.distance < 0.025) {
+      setSelectedAfir(afirHit.run.id);
+      setPathTab('afir');
+      return;
+    }
+    if (viewMode !== '2d') return;
     const near = minima.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 0.035);
     if (near >= 0) {
       setSelectedEq((s) =>
@@ -863,6 +888,45 @@ export default function Home() {
     if (!previous) return;
     setFeatures(previous);
     setFeatureHistory((history) => history.slice(0, -1));
+  };
+  const saveSurface = () => {
+    const data = {
+      format: 'pes-playground',
+      version: 1,
+      surface: { features },
+      tool: { kind, height, width, aspect, featureAngle },
+    };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })),
+      link = document.createElement('a');
+    link.href = url;
+    link.download = 'pes-surface.json';
+    link.click();
+    URL.revokeObjectURL(url);
+    setFileStatus('Saved pes-surface.json');
+  };
+  const loadSurface = async (file: File) => {
+    try {
+      const data = JSON.parse(await file.text()), source = data?.surface?.features;
+      if (data?.format !== 'pes-playground' || !Array.isArray(source)) throw new Error('format');
+      const loaded: Feature[] = source.map((f: unknown) => {
+        const v = f as Partial<Feature>, values = [v.x, v.y, v.amp, v.sigma, v.aspect, v.angle];
+        if (!values.every((n) => typeof n === 'number' && Number.isFinite(n))) throw new Error('feature');
+        return { x: v.x!, y: v.y!, amp: v.amp!, sigma: v.sigma!, aspect: v.aspect!, angle: v.angle! };
+      });
+      setFeatures(loaded);
+      setFeatureHistory([]);
+      if (data.tool?.kind === 'valley' || data.tool?.kind === 'hill') setKind(data.tool.kind);
+      if (Number.isFinite(data.tool?.height)) setHeight(Math.max(.05, Math.min(4, data.tool.height)));
+      if (Number.isFinite(data.tool?.width)) setWidth(Math.max(.04, Math.min(.2, data.tool.width)));
+      if (Number.isFinite(data.tool?.aspect)) setAspect(Math.max(1, Math.min(4, data.tool.aspect)));
+      if (Number.isFinite(data.tool?.featureAngle)) setFeatureAngle(((Math.round(data.tool.featureAngle) % 360) + 360) % 360);
+      setStrokes([]);
+      clearPaths();
+      setSelectedEq([]);
+      setFileStatus(`Loaded ${file.name}`);
+    } catch {
+      setFileStatus('Could not load this PES JSON file');
+    }
   };
   const angleFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
     const r = e.currentTarget.getBoundingClientRect(),
@@ -1006,6 +1070,12 @@ export default function Home() {
               Add hills and valleys here, then configure AFIR force and direction in the path panel.
             </p>
           </div>
+          <div className="surface-file-actions">
+            <button onClick={saveSurface}><Download size={14} /> Save JSON</button>
+            <button onClick={() => fileInput.current?.click()}><Upload size={14} /> Load JSON</button>
+            <input ref={fileInput} type="file" accept="application/json,.json" onChange={(e) => { const file = e.target.files?.[0]; if (file) void loadSurface(file); e.currentTarget.value = ''; }} />
+          </div>
+          {fileStatus && <p className="file-status">{fileStatus}</p>}
           <div className="surface-actions">
             <button className="undo-surface" disabled={!featureHistory.length} onClick={undoFeature}>
               <Undo2 size={15} /> Undo last
@@ -1035,9 +1105,8 @@ export default function Home() {
               <h2>{viewMode.startsWith('afir') ? 'AFIR-biased Virtual Surface' : 'Potential Energy Surface'}</h2>
             </div>
             <div className="toggles">
-              <button className={'tool-button focus-toggle ' + (focusMode ? 'active' : '')} aria-pressed={focusMode} onClick={() => setFocusMode((v) => !v)}>
+              <button className={'tool-button focus-toggle ' + (focusMode ? 'active' : '')} aria-label={focusMode ? 'Exit focus mode' : 'Focus mode'} title={focusMode ? 'Exit focus mode' : 'Focus mode'} aria-pressed={focusMode} onClick={() => setFocusMode((v) => !v)}>
                 {focusMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-                {focusMode ? 'Exit focus' : 'Focus'}
               </button>
               <div className="view-switch" aria-label="Landscape view mode">
                 <button className={viewMode === '2d' ? 'active' : ''} onClick={() => setViewMode('2d')}>PES 2D</button>
@@ -1258,13 +1327,13 @@ export default function Home() {
             </button>
             <button
               className="method-button lup wide"
-              disabled={reached === 0}
+              disabled={!selectedAfir || afirRuns.find((run) => run.id === selectedAfir)?.endEq === null}
               onClick={runLup}
             >
               <GitMerge size={15} />
               <span>
                 <b>LUP</b>
-                <small>Relax paths toward passes</small>
+                <small>{selectedAfir ? 'Relax selected AFIR path' : 'Select an AFIR path first'}</small>
               </span>
             </button>
           </div>
