@@ -42,6 +42,8 @@ type LupRun = {
   startEq: number;
   endEq: number;
   pt: Point;
+  pts: { id: number; index: number; point: Point }[];
+  eqs: { id: number; index: number; point: Point }[];
 };
 type IrcRun = { ptId: number; branches: Point[][] };
 type PathTab = 'afir' | 'lup' | 'irc';
@@ -67,7 +69,7 @@ const preset: Feature[] = [
 ];
 
 function energy(x: number, y: number, fs: Feature[]) {
-  let e = 0.24 * (x - 0.5) ** 2 + 0.18 * (y - 0.5) ** 2;
+  let e = 0;
   for (const f of fs) {
     const dx = x - f.x,
       dy = y - f.y,
@@ -81,6 +83,35 @@ function energy(x: number, y: number, fs: Feature[]) {
     );
   }
   return e;
+}
+function pathExtrema(path: Point[], runId: number) {
+  const smooth = path.map((p, i) => {
+      const a = path[Math.max(0, i - 1)].e,
+        b = p.e,
+        c = path[Math.min(path.length - 1, i + 1)].e;
+      return (a + 2 * b + c) / 4;
+    }),
+    range = Math.max(...smooth) - Math.min(...smooth),
+    threshold = Math.max(1e-5, range * 0.003),
+    maxima: number[] = [],
+    minima: number[] = [0];
+  for (let i = 1; i < path.length - 1; i++) {
+    const left = smooth[i - 1], right = smooth[i + 1], value = smooth[i],
+      lo = Math.min(...smooth.slice(Math.max(0, i - 3), Math.min(path.length, i + 4))),
+      hi = Math.max(...smooth.slice(Math.max(0, i - 3), Math.min(path.length, i + 4)));
+    if (value >= left && value > right && value - lo >= threshold) maxima.push(i);
+    if (value <= left && value < right && hi - value >= threshold) minima.push(i);
+  }
+  minima.push(path.length - 1);
+  if (!maxima.length && path.length > 2) {
+    let top = 1;
+    for (let i = 2; i < path.length - 1; i++) if (path[i].e > path[top].e) top = i;
+    maxima.push(top);
+  }
+  return {
+    pts: maxima.map((index) => ({ id: runId * 1000 + index, index, point: path[index] })),
+    eqs: [...new Set(minima)].map((index) => ({ id: runId * 1000 + 500 + index, index, point: path[index] })),
+  };
 }
 function gradient(x: number, y: number, fs: Feature[]) {
   const h = 0.0025;
@@ -279,6 +310,7 @@ function relaxLup(
     if (stableSteps > 20) break;
   }
   const pt = path.reduce((m, p) => (p.e > m.e ? p : m), path[0]);
+  const extrema = pathExtrema(path, id);
   return {
     id,
     sourceId: run.id,
@@ -286,6 +318,8 @@ function relaxLup(
     startEq: run.startEq,
     endEq: run.endEq,
     pt,
+    pts: extrema.pts,
+    eqs: extrema.eqs,
   };
 }
 function descend(
@@ -322,8 +356,8 @@ function descend(
   }
   return out;
 }
-function makeIrc(lup: LupRun, minima: Point[], fs: Feature[]): IrcRun {
-  const i = lup.points.indexOf(lup.pt),
+function makeIrc(lup: LupRun, selected: { id: number; index: number; point: Point }, minima: Point[], fs: Feature[]): IrcRun {
+  const i = selected.index,
     a = lup.points[Math.max(0, i - 1)],
     b = lup.points[Math.min(lup.points.length - 1, i + 1)],
     dx = b.x - a.x,
@@ -331,15 +365,15 @@ function makeIrc(lup: LupRun, minima: Point[], fs: Feature[]): IrcRun {
     n = Math.hypot(dx, dy) || 1,
     eps = 0.009;
   return {
-    ptId: lup.id,
+    ptId: selected.id,
     branches: [
       descend(
-        { x: lup.pt.x - (dx / n) * eps, y: lup.pt.y - (dy / n) * eps },
+        { x: selected.point.x - (dx / n) * eps, y: selected.point.y - (dy / n) * eps },
         minima,
         fs,
       ),
       descend(
-        { x: lup.pt.x + (dx / n) * eps, y: lup.pt.y + (dy / n) * eps },
+        { x: selected.point.x + (dx / n) * eps, y: selected.point.y + (dy / n) * eps },
         minima,
         fs,
       ),
@@ -440,8 +474,9 @@ export default function Home() {
     const exists = ircRuns.some((r) => r.ptId === selectedPt);
     if (exists) setIrcRuns((r) => r.filter((v) => v.ptId !== selectedPt));
     else {
-      const lup = lupRuns.find((r) => r.id === selectedPt);
-      if (lup) setIrcRuns((r) => [...r, makeIrc(lup, minima, features)]);
+      const lup = lupRuns.find((r) => r.pts.some((pt) => pt.id === selectedPt));
+      const pt = lup?.pts.find((candidate) => candidate.id === selectedPt);
+      if (lup && pt) setIrcRuns((r) => [...r, makeIrc(lup, pt, minima, features)]);
     }
   };
   const clearPaths = () => {
@@ -483,10 +518,11 @@ export default function Home() {
       }
     }
     const cw = w / S,
-      ch = h / S;
+      ch = h / S,
+      energySpan = hi - lo || 1;
     for (let j = 0; j < S; j++)
       for (let i = 0; i < S; i++) {
-        ctx.fillStyle = color((vals[j][i] - lo) / (hi - lo));
+        ctx.fillStyle = color((vals[j][i] - lo) / energySpan);
         ctx.fillRect(i * cw, j * ch, cw + 1, ch + 1);
       }
     if (contours) {
@@ -547,18 +583,33 @@ export default function Home() {
     });
     if (showLupPaths) lupRuns.forEach((r, i) => {
       line(r.points, ['#f6c85f', '#ffa85a', '#f4e36c'][i % 3], [], selectedLup === r.id ? 4.2 : 2.8);
-      const p = r.pt,
-        active = selectedPt === r.id;
-      ctx.fillStyle = active ? '#fff5a8' : '#fff';
-      ctx.strokeStyle = active ? '#e34b55' : '#17202a';
-      ctx.lineWidth = active ? 3 : 2;
-      ctx.beginPath();
-      ctx.arc(p.x * w, p.y * h, active ? 8 : 6, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#17202a';
-      ctx.font = '700 10px sans-serif';
-      ctx.fillText(`PT${i + 1}`, p.x * w + 9, p.y * h - 8);
+      r.eqs.forEach((eq, k) => {
+        const p = eq.point;
+        ctx.fillStyle = '#baf2df';
+        ctx.strokeStyle = '#087f78';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.rect(p.x * w - 4, p.y * h - 4, 8, 8);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = '700 9px sans-serif';
+        ctx.fillText(`pEQ${i + 1}.${k + 1}`, p.x * w + 7, p.y * h + 12);
+      });
+      r.pts.forEach((pt, k) => {
+        const p = pt.point,
+          active = selectedPt === pt.id;
+        ctx.fillStyle = active ? '#fff5a8' : '#fff';
+        ctx.strokeStyle = active ? '#e34b55' : '#17202a';
+        ctx.lineWidth = active ? 3 : 2;
+        ctx.beginPath();
+        ctx.arc(p.x * w, p.y * h, active ? 8 : 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#17202a';
+        ctx.font = '700 10px sans-serif';
+        ctx.fillText(`PT${i + 1}.${k + 1}`, p.x * w + 9, p.y * h - 8);
+      });
     });
     if (showIrcPaths) ircRuns.forEach((r) =>
       r.branches.forEach((b) => line(b, selectedIrc === r.ptId ? '#ffffff' : '#d9f6ff', [], selectedIrc === r.ptId ? 4.5 : 3)),
@@ -677,6 +728,18 @@ export default function Home() {
     if (showAfirPaths) afirRuns.forEach((r) => path(r.points, selectedAfir === r.id ? '#ffeff3' : '#ff6b8a', selectedAfir === r.id ? 4 : 2.2, [3, 4]));
     if (showLupPaths) lupRuns.forEach((r) => path(r.points, selectedLup === r.id ? '#fff7bb' : '#f6c85f', selectedLup === r.id ? 4.5 : 3));
     if (showIrcPaths) ircRuns.forEach((r) => r.branches.forEach((b) => path(b, selectedIrc === r.ptId ? '#fff' : '#d9f6ff', selectedIrc === r.ptId ? 4.5 : 3)));
+    if (showLupPaths) lupRuns.forEach((run) => {
+      run.eqs.forEach((eq) => {
+        const q = project(eq.point.x, eq.point.y, surfaceEnergy(eq.point.x, eq.point.y) + span * 0.025);
+        ctx.fillStyle = '#baf2df'; ctx.strokeStyle = '#087f78'; ctx.lineWidth = 1.5;
+        ctx.fillRect(q.x - 3.5, q.y - 3.5, 7, 7); ctx.strokeRect(q.x - 3.5, q.y - 3.5, 7, 7);
+      });
+      run.pts.forEach((pt) => {
+        const q = project(pt.point.x, pt.point.y, surfaceEnergy(pt.point.x, pt.point.y) + span * 0.03), active = selectedPt === pt.id;
+        ctx.beginPath(); ctx.arc(q.x, q.y, active ? 7 : 5, 0, Math.PI * 2);
+        ctx.fillStyle = active ? '#fff5a8' : '#fff'; ctx.strokeStyle = active ? '#e34b55' : '#17202a'; ctx.lineWidth = active ? 2.5 : 1.5; ctx.fill(); ctx.stroke();
+      });
+    });
     if (showEQ) minima.forEach((p, i) => {
       const q = project(p.x, p.y, surfaceEnergy(p.x, p.y) + span * 0.025);
       ctx.beginPath();
@@ -687,7 +750,7 @@ export default function Home() {
       ctx.fill();
       ctx.stroke();
     });
-  }, [features, viewAzimuth, viewElevation, showAfirPaths, showLupPaths, showIrcPaths, afirRuns, lupRuns, ircRuns, selectedAfir, selectedLup, selectedIrc, showEQ, minima, selectedEq, viewMode]);
+  }, [features, viewAzimuth, viewElevation, showAfirPaths, showLupPaths, showIrcPaths, afirRuns, lupRuns, ircRuns, selectedAfir, selectedLup, selectedIrc, selectedPt, showEQ, minima, selectedEq, viewMode]);
   useEffect(() => {
     draw();
     const ro = new ResizeObserver(draw);
@@ -747,9 +810,11 @@ export default function Home() {
     const r = e.currentTarget.getBoundingClientRect(),
       x = (e.clientX - r.left) / r.width,
       y = (e.clientY - r.top) / r.height,
-      pt = lupRuns.find((v) => Math.hypot(v.pt.x - x, v.pt.y - y) < 0.035);
-    if (pt) {
-      setSelectedPt(pt.id);
+      hit = lupRuns.flatMap((run) => run.pts.map((pt) => ({ run, pt })))
+        .find(({ pt }) => Math.hypot(pt.point.x - x, pt.point.y - y) < 0.035);
+    if (hit) {
+      setSelectedLup(hit.run.id);
+      setSelectedPt(hit.pt.id);
       return;
     }
     const near = minima.findIndex((p) => Math.hypot(p.x - x, p.y - y) < 0.035);
@@ -1067,9 +1132,15 @@ export default function Home() {
                       </button>
                     ))}
                     {pathTab === 'lup' && lupRuns.map((run, i) => (
-                      <button key={run.id} className={selectedLup === run.id ? 'active' : ''} onClick={() => { setSelectedLup(run.id); setSelectedPt(run.id); }}>
-                        <b>LUP {i + 1}</b><span>EQ{run.startEq + 1} → EQ{run.endEq + 1}</span><small>PT E={run.pt.e.toFixed(2)}</small>
-                      </button>
+                      <div className="path-group" key={run.id}>
+                        <button className={selectedLup === run.id ? 'active' : ''} onClick={() => { setSelectedLup(run.id); setSelectedPt(run.pts[0]?.id ?? null); }}>
+                          <b>LUP {i + 1}</b><span>EQ{run.startEq + 1} → EQ{run.endEq + 1}</span><small>{run.pts.length} PT · {run.eqs.length} path EQ · top E={run.pt.e.toFixed(2)}</small>
+                        </button>
+                        <div className="critical-points">
+                          {run.pts.map((pt, k) => <button key={pt.id} className={selectedPt === pt.id ? 'active pt' : 'pt'} onClick={() => { setSelectedLup(run.id); setSelectedPt(pt.id); }}>PT{k + 1} <i>{pt.point.e.toFixed(2)}</i></button>)}
+                          {run.eqs.map((eq, k) => <span key={eq.id}>pEQ{k + 1} <i>{eq.point.e.toFixed(2)}</i></span>)}
+                        </div>
+                      </div>
                     ))}
                     {pathTab === 'irc' && ircRuns.map((run, i) => (
                       <button key={run.ptId} className={selectedIrc === run.ptId ? 'active' : ''} onClick={() => { setSelectedIrc(run.ptId); setSelectedPt(run.ptId); }}>
@@ -1229,7 +1300,7 @@ export default function Home() {
               Reached <b>{reached}</b>
             </span>
             <span>
-              PT <b>{lupRuns.length}</b>
+              PT <b>{lupRuns.reduce((n, run) => n + run.pts.length, 0)}</b>
             </span>
           </div>
           <div className="pt-card">
@@ -1237,7 +1308,7 @@ export default function Home() {
             <b>
               {selectedPt === null
                 ? '—'
-                : lupRuns.find((r) => r.id === selectedPt)?.pt.e.toFixed(2)}
+                : lupRuns.flatMap((r) => r.pts).find((pt) => pt.id === selectedPt)?.point.e.toFixed(2)}
             </b>
             <small>Select a PT to enable IRC</small>
           </div>

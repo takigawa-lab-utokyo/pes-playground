@@ -430,7 +430,8 @@ input[type='range'] {
   cursor: pointer;
 }
 .path-list { overflow: auto; padding: 0 7px 7px; display: grid; gap: 5px; }
-.path-list > button {
+.path-list > button,
+.path-group > button {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 3px 6px;
@@ -442,11 +443,20 @@ input[type='range'] {
   color: var(--ink);
   cursor: pointer;
 }
-.path-list > button.active { border-color: var(--coral); box-shadow: inset 3px 0 var(--coral); background: #fff8f9; }
+.path-list > button.active,
+.path-group > button.active { border-color: var(--coral); box-shadow: inset 3px 0 var(--coral); background: #fff8f9; }
 .path-list b { font: 800 9px monospace; }
 .path-list span { font-size: 8px; color: var(--muted); }
 .path-list small { grid-column: 1/-1; font-size: 8px; color: var(--teal); }
 .path-list > p { margin: 18px 8px; color: var(--muted); font-size: 9px; text-align: center; }
+.path-group { display: grid; gap: 4px; }
+.critical-points { display: flex; flex-wrap: wrap; gap: 3px; padding: 0 2px 3px; }
+.critical-points button,
+.critical-points span { border: 1px solid var(--line); border-radius: 5px; background: #fff; padding: 4px 5px; color: var(--muted); font: 700 7px monospace; }
+.critical-points button { cursor: pointer; }
+.critical-points button.active { border-color: var(--coral); color: #b33f54; background: #fff5f7; }
+.critical-points span { border-color: #b9ddd3; background: #f1faf7; color: var(--teal); }
+.critical-points i { font-style: normal; opacity: .75; }
 .open-path-browser {
   position: absolute;
   top: 8px;
