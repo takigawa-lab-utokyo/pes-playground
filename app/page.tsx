@@ -453,12 +453,9 @@ export default function Home() {
     const angle = (directionAngle * Math.PI) / 180,
       newRuns = selectedEq.map((startEq) =>
         simulateAfir(startEq, angle, afirForce, minima, features, seq.current++),
-      );
+    );
     setAfirRuns((r) => [...r, ...newRuns]);
     setSelectedAfir(newRuns.at(-1)?.id ?? null);
-    setLupRuns([]);
-    setIrcRuns([]);
-    setSelectedPt(null);
   };
   const launchRandomAfir = () => {
     if (selectedEq.length === 0) return;
@@ -467,12 +464,9 @@ export default function Home() {
         Array.from({ length: count }, () =>
           simulateAfir(startEq, Math.random() * Math.PI * 2, afirForce, minima, features, seq.current++),
         ),
-      );
+    );
     setAfirRuns((r) => [...r, ...newRuns]);
     setSelectedAfir(newRuns.at(-1)?.id ?? null);
-    setLupRuns([]);
-    setIrcRuns([]);
-    setSelectedPt(null);
   };
   const runLup = () => {
     const chosen = afirRuns.find((r) => r.id === selectedAfir);
@@ -480,9 +474,10 @@ export default function Home() {
     const made = [chosen]
       .map((r) => relaxLup(r, minima, features, seq.current++))
       .filter((r): r is LupRun => !!r);
-    setLupRuns(made);
-    setIrcRuns([]);
-    setSelectedPt(null);
+    if (!made.length) return;
+    setLupRuns((runs) => [...runs, ...made]);
+    setSelectedLup(made.at(-1)?.id ?? null);
+    setSelectedPt(made.at(-1)?.pts[0]?.id ?? null);
   };
   const toggleIrc = () => {
     if (selectedPt === null) return;
@@ -503,6 +498,20 @@ export default function Home() {
     setSelectedLup(null);
     setSelectedIrc(null);
     setViewMode((v) => v.startsWith('afir') ? '2d' : v);
+  };
+  const deleteAfir = (id: number) => {
+    setAfirRuns((runs) => runs.filter((run) => run.id !== id));
+    setSelectedAfir((selected) => selected === id ? null : selected);
+  };
+  const deleteLup = (id: number) => {
+    const removed = lupRuns.find((run) => run.id === id);
+    setLupRuns((runs) => runs.filter((run) => run.id !== id));
+    setSelectedLup((selected) => selected === id ? null : selected);
+    if (removed?.pts.some((pt) => pt.id === selectedPt)) setSelectedPt(null);
+  };
+  const deleteIrc = (ptId: number) => {
+    setIrcRuns((runs) => runs.filter((run) => run.ptId !== ptId));
+    setSelectedIrc((selected) => selected === ptId ? null : selected);
   };
 
   const draw = useCallback(() => {
@@ -1222,15 +1231,21 @@ export default function Home() {
                   )}
                   <div className="path-list">
                     {pathTab === 'afir' && afirRuns.map((run, i) => ({ run, i })).filter(({ run }) => !showReachedAfirOnly || run.endEq !== null).map(({ run, i }) => (
-                      <button key={run.id} className={[selectedAfir === run.id ? 'active' : '', run.endEq !== null ? 'reached' : ''].filter(Boolean).join(' ')} onClick={() => setSelectedAfir(run.id)}>
-                        <b>AFIR {i + 1}</b><span className="eq-route">EQ{run.startEq + 1} → {run.endEq === null ? 'stopped' : `EQ${run.endEq + 1}`}</span><small>{run.points.length} points</small>
-                      </button>
+                      <div className="path-entry" key={run.id}>
+                        <button className={[selectedAfir === run.id ? 'active' : '', run.endEq !== null ? 'reached' : ''].filter(Boolean).join(' ')} onClick={() => setSelectedAfir(run.id)}>
+                          <b>AFIR {i + 1}</b><span className="eq-route">EQ{run.startEq + 1} → {run.endEq === null ? 'stopped' : `EQ${run.endEq + 1}`}</span><small>{run.points.length} points</small>
+                        </button>
+                        <button className="delete-path" aria-label={`Delete AFIR ${i + 1}`} title="Delete path" onClick={() => deleteAfir(run.id)}><Trash2 size={13} /></button>
+                      </div>
                     ))}
                     {pathTab === 'lup' && lupRuns.map((run, i) => (
                       <div className="path-group" key={run.id}>
-                        <button className={selectedLup === run.id ? 'active' : ''} onClick={() => { setSelectedLup(run.id); setSelectedPt(run.pts[0]?.id ?? null); }}>
-                          <b>LUP {i + 1}</b><span>EQ{run.startEq + 1} → EQ{run.endEq + 1}</span><small>{run.pts.length} PT · {run.eqs.length} path EQ · top E={run.pt.e.toFixed(2)}</small>
-                        </button>
+                        <div className="path-entry">
+                          <button className={selectedLup === run.id ? 'active' : ''} onClick={() => { setSelectedLup(run.id); setSelectedPt(run.pts[0]?.id ?? null); }}>
+                            <b>LUP {i + 1}</b><span>EQ{run.startEq + 1} → EQ{run.endEq + 1}</span><small>{run.pts.length} PT · {run.eqs.length} path EQ · top E={run.pt.e.toFixed(2)}</small>
+                          </button>
+                          <button className="delete-path" aria-label={`Delete LUP ${i + 1}`} title="Delete path" onClick={() => deleteLup(run.id)}><Trash2 size={13} /></button>
+                        </div>
                         <div className="critical-points">
                           {run.pts.map((pt, k) => <button key={pt.id} className={selectedPt === pt.id ? 'active pt' : 'pt'} onClick={() => { setSelectedLup(run.id); setSelectedPt(pt.id); }}>PT{k + 1} <i>{pt.point.e.toFixed(2)}</i></button>)}
                           {run.eqs.map((eq, k) => <span key={eq.id}>pEQ{k + 1} <i>{eq.point.e.toFixed(2)}</i></span>)}
@@ -1238,9 +1253,12 @@ export default function Home() {
                       </div>
                     ))}
                     {pathTab === 'irc' && ircRuns.map((run, i) => (
-                      <button key={run.ptId} className={selectedIrc === run.ptId ? 'active' : ''} onClick={() => { setSelectedIrc(run.ptId); setSelectedPt(run.ptId); }}>
-                        <b>IRC {i + 1}</b><span>From selected PT</span><small>{run.branches.reduce((n, b) => n + b.length, 0)} points</small>
-                      </button>
+                      <div className="path-entry" key={run.ptId}>
+                        <button className={selectedIrc === run.ptId ? 'active' : ''} onClick={() => { setSelectedIrc(run.ptId); setSelectedPt(run.ptId); }}>
+                          <b>IRC {i + 1}</b><span>From selected PT</span><small>{run.branches.reduce((n, b) => n + b.length, 0)} points</small>
+                        </button>
+                        <button className="delete-path" aria-label={`Delete IRC ${i + 1}`} title="Delete path" onClick={() => deleteIrc(run.ptId)}><Trash2 size={13} /></button>
+                      </div>
                     ))}
                     {((pathTab === 'afir' && (!afirRuns.length || (showReachedAfirOnly && reached === 0))) || (pathTab === 'lup' && !lupRuns.length) || (pathTab === 'irc' && !ircRuns.length)) && <p>{pathTab === 'afir' && showReachedAfirOnly ? 'No paths have reached an EQ yet.' : 'No calculated paths yet.'}</p>}
                   </div>
