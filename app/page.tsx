@@ -138,16 +138,6 @@ function color(t: number) {
     b = palette[i + 1].match(/\w\w/g)!.map((v) => parseInt(v, 16));
   return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * q)).join(',')})`;
 }
-function distanceToPath(x: number, y: number, points: Point[]) {
-  let best = Infinity;
-  for (let i = 1; i < points.length; i++) {
-    const a = points[i - 1], b = points[i], dx = b.x - a.x, dy = b.y - a.y,
-      length2 = dx * dx + dy * dy,
-      t = length2 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / length2)) : 0;
-    best = Math.min(best, Math.hypot(x - (a.x + dx * t), y - (a.y + dy * t)));
-  }
-  return best;
-}
 function detectMinima(fs: Feature[]) {
   const vals = Array.from({ length: N }, (_, j) =>
       Array.from({ length: N }, (_, i) =>
@@ -839,14 +829,6 @@ export default function Home() {
     if (hit) {
       setSelectedLup(hit.run.id);
       setSelectedPt(hit.pt.id);
-      return;
-    }
-    const afirHit = afirRuns
-      .map((run) => ({ run, distance: distanceToPath(x, y, run.points) }))
-      .sort((a, b) => a.distance - b.distance)[0];
-    if (afirHit && afirHit.distance < 0.025) {
-      setSelectedAfir(afirHit.run.id);
-      setPathTab('afir');
       return;
     }
     if (viewMode !== '2d') return;
